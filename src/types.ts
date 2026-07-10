@@ -1,0 +1,69 @@
+export type TaskStatus = "open" | "inProgress" | "done" | "cancelled";
+export type Priority = "highest" | "high" | "medium" | "low" | "lowest";
+
+export interface Task {
+  text: string;
+  status: TaskStatus;
+  due: string | null; // "YYYY-MM-DD" o null
+  completed: string | null; // "YYYY-MM-DD" o null, data del marcatore ✅
+  priority: Priority | null;
+  tags: string[];     // es. ["progetto/casa"]
+  file: string;       // path relativo al vault
+  line: number;       // riga 0-based
+  /** Riga Markdown esatta letta dall'indice; usata per validare le scritture. */
+  source: string;
+}
+
+export type DailyConfigMode = "obsidian" | "custom";
+
+export interface Settings {
+  inboxPath: string;      // es. "_inbox/Inbox.md"
+  dailyFolder: string;    // es. "02 Daily"
+  dailyFormat: string;    // es. "YYYY-MM-DD"
+  dailyTemplate: string;  // path opzionale al template
+  dailyConfigMode: DailyConfigMode;
+  projectPrefix: string;  // es. "progetto/"
+  areaPrefix: string;     // es. "area/"
+  savedViews: SavedView[];
+  /** Stato del pannello (filtro/ordina/raggruppa/collassati), persistito tra le sessioni. */
+  panelState?: TaskPanelState;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  inboxPath: "_inbox/Inbox.md",
+  dailyFolder: "02 Daily",
+  dailyFormat: "YYYY-MM-DD",
+  dailyTemplate: "",
+  dailyConfigMode: "obsidian",
+  projectPrefix: "progetto/",
+  areaPrefix: "area/",
+  savedViews: [],
+};
+
+export interface NewTaskInput {
+  text: string;
+  due: string | null;
+  /** Priorità esplicita della QuickAdd evoluta. Se assente, `important` scrive `high`. */
+  priority?: Priority | null;
+  important: boolean;
+  /** Se impostato, il task viene scritto in questa nota (override della risoluzione da settings). */
+  targetPath?: string;
+}
+
+import type { TaskFilter, GroupKey } from "./core/query";
+import type { SortKey } from "./core/sorting";
+
+export interface SavedView {
+  name: string;
+  filter: TaskFilter;
+  sort: SortKey;
+  group: GroupKey;
+}
+
+/** Stato pilotante del TaskPanel. Tipi puri (no `obsidian`) così vive nei Settings. */
+export interface TaskPanelState {
+  filter: TaskFilter;
+  sort: SortKey;
+  group: GroupKey;
+  collapsed: string[];
+}
