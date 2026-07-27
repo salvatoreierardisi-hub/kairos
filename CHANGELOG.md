@@ -2,6 +2,16 @@
 
 All notable changes to Kairos are documented in this file.
 
+## [0.2.1] — 2026-07-27
+
+### Fixed
+
+- The compact Kairos view now uses the secondary Obsidian surface, restoring visual
+  separation between the editor and the right sidebar.
+- Text inside interactive daily-note task rows now has consistent horizontal inset.
+- The Live Preview block-edit control no longer covers the source-note action on the
+  first task in a `kairos-tasks` block.
+
 ## [0.2.0] — 2026-07-27
 
 ### Added
@@ -51,5 +61,6 @@ All notable changes to Kairos are documented in this file.
 - Search, filters, sorting, grouping, saved views, multiselect, and bulk actions.
 - Configurable Inbox, Daily Notes integration, priorities, dates, tags, and task status.
 
+[0.2.1]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/salvatoreierardisi-hub/kairos/releases/tag/v0.1.0

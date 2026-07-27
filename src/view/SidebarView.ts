@@ -32,6 +32,7 @@ export class SidebarView extends ItemView {
   getIcon(): string { return "circle-check"; }
 
   async onOpen(): Promise<void> {
+    this.containerEl.addClass("kairos-sidebar-surface");
     const root = this.contentEl;
     root.empty();
     root.addClass("kairos-root");
@@ -63,6 +64,7 @@ export class SidebarView extends ItemView {
   async onClose(): Promise<void> {
     this.panel?.unmount();
     this.panel = null;
+    this.containerEl.removeClass("kairos-sidebar-surface");
   }
 
   private persistState(): void {

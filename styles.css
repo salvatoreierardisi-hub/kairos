@@ -11,6 +11,12 @@
   font-family: var(--font-interface);
 }
 
+/* La view laterale usa la stessa superficie delle sidebar native di Obsidian. */
+.kairos-sidebar-surface,
+.kairos-sidebar-surface .kairos-root {
+  background: var(--background-secondary);
+}
+
 /* Guscio: pannello (a sinistra) + Inspector (a destra). */
 .kairos-shell {
   display: flex;
@@ -815,6 +821,15 @@
   margin: var(--size-4-2) 0;
 }
 
+/* In Live Preview il controllo nativo "Modifica blocco" copre l'azione del
+   primo task. Il blocco Kairos è gestito dal plugin, quindi lo nascondiamo
+   soltanto quando contiene la proiezione interattiva. */
+.markdown-source-view.mod-cm6
+  .cm-embed-block:has(.kairos-daily-block)
+  .edit-block-button {
+  display: none;
+}
+
 .kairos-daily-task {
   display: flex;
   align-items: center;
@@ -853,7 +868,7 @@
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  padding: var(--size-2-1) 0;
+  padding: var(--size-2-1) calc(var(--size-2-2) + 8px);
   color: var(--text-normal);
   text-align: left;
 }
