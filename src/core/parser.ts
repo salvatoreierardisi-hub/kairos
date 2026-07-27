@@ -12,6 +12,8 @@ const PRIORITY_EMOJI: [string, Priority][] = [
 ];
 const PRIORITY_RE = /🔺|⏫|🔼|🔽|⏬/g;
 const TAG_RE = /#([A-Za-z0-9_/\-]+)/g;
+const DETAIL_LINK_RE = /\[\[([^\]|]+)\|Dettagli\]\]/;
+const BLOCK_ID_RE = /\s+\^(kairos-[A-Za-z0-9-]+)\s*$/;
 
 export function parseLine(raw: string, file: string, line: number): Task | null {
   const m = raw.match(TASK_RE);
@@ -37,16 +39,35 @@ export function parseLine(raw: string, file: string, line: number): Task | null 
     ? (PRIORITY_EMOJI.find(([emoji]) => emoji === priorityMatch[0])?.[1] ?? null)
     : null;
   const tags = [...body.matchAll(TAG_RE)].map((t) => t[1]);
+  const rawDetailPath = body.match(DETAIL_LINK_RE)?.[1];
+  const detailPath = rawDetailPath
+    ? rawDetailPath.toLowerCase().endsWith(".md") ? rawDetailPath : `${rawDetailPath}.md`
+    : undefined;
+  const blockId = body.match(BLOCK_ID_RE)?.[1];
 
   const text = body
     .replace(DUE_RE, "")
     .replace(DONE_RE, "")
     .replace(PRIORITY_RE, "")
     .replace(TAG_RE, "")
+    .replace(DETAIL_LINK_RE, "")
+    .replace(BLOCK_ID_RE, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  return { text, status, due, completed, priority, tags, file, line, source: raw };
+  return {
+    text,
+    status,
+    due,
+    completed,
+    priority,
+    tags,
+    file,
+    line,
+    source: raw,
+    ...(detailPath ? { detailPath } : {}),
+    ...(blockId ? { blockId } : {}),
+  };
 }
 
 export function parseFileContent(content: string, file: string): Task[] {

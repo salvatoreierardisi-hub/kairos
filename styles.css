@@ -796,6 +796,86 @@
   background: var(--background-modifier-hover);
 }
 
+.kairos-detail-link {
+  cursor: var(--cursor-link);
+  color: var(--text-accent);
+}
+
+.kairos-detail-link:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent-hover);
+}
+
+/* ── Proiezione task nelle daily ─────────────────────────────────────── */
+
+.kairos-daily-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  margin: var(--size-4-2) 0;
+}
+
+.kairos-daily-task {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  min-height: 42px;
+  padding: var(--size-2-1) var(--size-2-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.kairos-daily-check,
+.kairos-daily-open,
+.kairos-daily-task__body {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.kairos-daily-check,
+.kairos-daily-open {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.kairos-daily-task__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--size-2-1) 0;
+  color: var(--text-normal);
+  text-align: left;
+}
+
+.kairos-daily-task__text {
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.kairos-daily-task__source,
+.kairos-daily-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.kairos-daily-open:hover,
+.kairos-daily-check:hover,
+.kairos-daily-task__body:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
 /* ── Quick-add ────────────────────────────────────────────────────────── */
 
 .modal.kairos-quickadd-modal {
@@ -1032,6 +1112,48 @@
   font-weight: 800;
 }
 
+.kairos-quickadd-create-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.kairos-quickadd-create-group .kairos-quickadd-create {
+  border-radius: 16px 0 0 16px;
+}
+
+.kairos-quickadd-create-group .kairos-quickadd-create:only-child {
+  border-radius: 16px;
+}
+
+.kairos-quickadd-create-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--text-on-accent) 28%, transparent);
+  border-radius: 0 16px 16px 0;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: none;
+}
+
+.kairos-quickadd-create-menu .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.kairos-quickadd-create-menu:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.kairos-quickadd-create-menu:disabled {
+  opacity: 0.55;
+}
+
 .kairos-quickadd-create:hover {
   background: var(--interactive-accent-hover);
 }
@@ -1079,23 +1201,29 @@
 @media (max-width: 640px) {
   .modal.kairos-quickadd-modal {
     position: fixed;
-    inset: max(10px, env(safe-area-inset-top)) 12px auto;
-    width: auto;
-    height: auto;
-    max-height: min(310px, calc(100dvh - max(18px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom))));
+    inset: max(12px, env(safe-area-inset-top)) 8px auto !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: min(300px, 42dvh) !important;
     margin: 0;
     border-radius: 18px;
-    transform: none;
+    transform: none !important;
   }
 
   .modal-container .modal.kairos-quickadd-modal {
     align-self: flex-start;
   }
 
+  .modal.kairos-quickadd-modal .modal-content,
   .kairos-quickadd-card {
+    height: auto;
     min-height: 0;
     max-height: inherit;
-    padding: 10px;
+  }
+
+  .kairos-quickadd-card {
+    padding: 12px 12px max(10px, env(safe-area-inset-bottom));
     overflow-y: auto;
   }
 
@@ -1123,7 +1251,9 @@
   }
 
   .kairos-quickadd-inputwrap {
+    min-height: 84px;
     padding: 6px 2px 8px;
+    overflow-y: auto;
   }
 
   .kairos-quickadd-input {
@@ -1133,16 +1263,22 @@
   }
 
   .kairos-quickadd-footer {
-    align-items: center;
-    display: grid;
-    grid-template-columns: 1fr auto;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex: 0 0 auto;
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
     gap: 7px;
+    padding-top: 8px;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--background-primary);
   }
 
   .kairos-quickadd-tools {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-column: 1 / 2;
     width: 100%;
     gap: 7px;
   }
@@ -1163,18 +1299,35 @@
   }
 
   .kairos-quickadd-create {
-    grid-column: 2 / 3;
-    width: auto;
-    min-height: 38px;
+    flex: 1 1 auto;
+    min-height: 42px;
     padding-inline: 16px;
+    border-radius: 13px;
+  }
+
+  .kairos-quickadd-create-group {
+    width: 100%;
+  }
+
+  .kairos-quickadd-create-menu {
+    min-height: 42px;
+    width: 44px;
+    min-width: 44px;
+    border-radius: 0 13px 13px 0;
+  }
+
+  .kairos-quickadd-create-group .kairos-quickadd-create {
+    border-radius: 13px 0 0 13px;
+  }
+
+  .kairos-quickadd-create-group .kairos-quickadd-create:only-child {
     border-radius: 13px;
   }
 }
 
 @media (max-width: 640px) and (max-height: 560px) {
   .modal.kairos-quickadd-modal {
-    top: max(8px, env(safe-area-inset-top));
-    max-height: min(250px, calc(100dvh - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom))));
+    max-height: 42dvh !important;
   }
 
   .kairos-quickadd-card {
@@ -1183,7 +1336,7 @@
 
   .kairos-quickadd-input {
     min-height: 34px;
-    max-height: 58px;
+    max-height: 72px;
   }
 
   .kairos-quickadd-tool {
@@ -1193,6 +1346,204 @@
   .kairos-quickadd-create {
     min-height: 36px;
   }
+}
+
+/*
+ * Obsidian Mobile può esporre al CSS un viewport desktop anche su iPhone.
+ * Questi override usano quindi la classe affidabile dell'app, invece di
+ * dipendere soltanto dalla media query max-width.
+ */
+.is-mobile .modal.kairos-quickadd-modal {
+  position: fixed;
+  inset: clamp(170px, 28dvh, 250px) 8px auto !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: min(270px, 40dvh) !important;
+  margin: 0;
+  border-radius: 18px;
+  transform: none !important;
+}
+
+.is-mobile .modal-container .modal.kairos-quickadd-modal {
+  align-self: flex-start;
+}
+
+.is-mobile .modal.kairos-quickadd-modal .modal-content,
+.is-mobile .kairos-quickadd-card {
+  height: auto;
+  min-height: 0;
+  max-height: inherit;
+}
+
+.is-mobile .modal.kairos-quickadd-modal .modal-content {
+  display: block !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible;
+}
+
+.is-mobile .kairos-quickadd-card {
+  display: block !important;
+  padding: 10px 12px max(8px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.is-mobile .kairos-quickadd-top {
+  gap: 6px;
+}
+
+.is-mobile .kairos-quickadd-dest {
+  min-height: 34px;
+  max-width: calc(100% - 42px);
+  padding-inline: 9px;
+  border-radius: 11px;
+  background: var(--background-modifier-hover);
+  font-size: var(--font-ui-small);
+}
+
+.is-mobile .kairos-quickadd-dest__icon .svg-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.is-mobile .kairos-quickadd-close {
+  width: 34px;
+  height: 34px;
+  background: var(--background-modifier-hover);
+}
+
+.is-mobile .kairos-quickadd-inputwrap {
+  display: block !important;
+  width: 100%;
+  min-height: 72px !important;
+  margin: 6px 0;
+  padding: 8px 4px 6px;
+  overflow-y: auto;
+}
+
+.is-mobile .kairos-quickadd-input {
+  display: block !important;
+  width: 100% !important;
+  height: 66px !important;
+  min-height: 66px !important;
+  max-height: 84px;
+  padding: 8px 6px !important;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background-secondary) 48%, transparent) !important;
+  color: var(--text-normal) !important;
+  -webkit-text-fill-color: var(--text-normal) !important;
+  caret-color: var(--interactive-accent) !important;
+  opacity: 1 !important;
+  font-size: 17px;
+  line-height: 1.35;
+  -webkit-appearance: none;
+}
+
+.is-mobile .kairos-quickadd-input::placeholder {
+  color: var(--text-faint) !important;
+  -webkit-text-fill-color: var(--text-faint) !important;
+  opacity: 1 !important;
+}
+
+.is-mobile .kairos-quickadd-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: 6px;
+  padding-top: 6px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--background-primary);
+}
+
+.is-mobile .kairos-quickadd-tools {
+  display: contents;
+}
+
+.is-mobile .kairos-quickadd-tool {
+  justify-content: center;
+  min-width: 0;
+  min-height: 32px;
+  padding-inline: 6px;
+  border-radius: 11px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  gap: 6px;
+}
+
+.is-mobile .kairos-quickadd-tool--status {
+  grid-column: 1 / -1;
+}
+
+.is-mobile .kairos-quickadd-tool--date {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.is-mobile .kairos-quickadd-tool--priority {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.is-mobile .kairos-quickadd-footer.is-editing .kairos-quickadd-tool--status {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.is-mobile .kairos-quickadd-footer.is-editing .kairos-quickadd-tool--date {
+  grid-row: 2;
+}
+
+.is-mobile .kairos-quickadd-footer.is-editing .kairos-quickadd-tool--priority {
+  grid-row: 2;
+}
+
+.is-mobile .kairos-quickadd-tool__icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.is-mobile .kairos-quickadd-spacer {
+  display: none;
+}
+
+.is-mobile .kairos-quickadd-create-group {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+}
+
+.is-mobile .kairos-quickadd-footer.is-editing .kairos-quickadd-create-group {
+  grid-row: 3;
+}
+
+.is-mobile .kairos-quickadd-create {
+  flex: 1 1 auto;
+  min-height: 36px;
+  padding-inline: 14px;
+  border-radius: 12px;
+  font-size: var(--font-ui-small);
+}
+
+.is-mobile .kairos-quickadd-create-menu {
+  width: 40px;
+  min-width: 40px;
+  min-height: 36px;
+  border-radius: 0 12px 12px 0;
+}
+
+.is-mobile .kairos-quickadd-create-group .kairos-quickadd-create {
+  border-radius: 12px 0 0 12px;
+}
+
+.is-mobile .kairos-quickadd-create-group .kairos-quickadd-create:only-child {
+  border-radius: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {

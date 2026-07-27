@@ -4,17 +4,16 @@ import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
 import {
   groupTasks,
-  matchesTask,
   DEFAULT_FILTER,
   DueSegment,
   GroupKey,
   TaskFilter,
 } from "../core/query";
 import { formatDueBadgeLabel } from "../core/dateLabel";
-import { sortTasks, SortKey } from "../core/sorting";
+import { SortKey } from "../core/sorting";
 import { reconcileTaskSelection } from "../core/selection";
 import { PRIORITY_EMOJI } from "../core/parser";
-import { Task, Settings, TaskStatus, Priority, TaskPanelState, SavedView } from "../types";
+import { Task, Settings, TaskStatus, Priority, TaskPanelState, SavedView, PanelView } from "../types";
 import { pickNote } from "./NotePicker";
 import { promptText } from "./PromptModal";
 
@@ -25,10 +24,10 @@ function submenuOf(item: MenuItem): Menu {
 
 const PAGE_SIZE = 20;
 
-const DUE_SEGMENTS: [DueSegment, string][] = [
+const PANEL_VIEWS: [PanelView, string][] = [
+  ["inbox", "Inbox"],
   ["today", "Oggi"],
   ["upcoming", "Prossimi"],
-  ["none", "Senza data"],
   ["all", "Tutti"],
 ];
 
@@ -118,6 +117,20 @@ function addDays(date: string, days: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+function normalizeMarkdownPath(path: string): string {
+  const clean = path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return clean === "" || clean.toLowerCase().endsWith(".md") ? clean : `${clean}.md`;
+}
+
+function dueForView(view: PanelView): DueSegment {
+  return view === "today" ? "today" : view === "upcoming" ? "upcoming" : "all";
+}
+
+function viewFromLegacyDue(due: DueSegment): PanelView {
+  if (due === "today" || due === "upcoming" || due === "all") return due;
+  return "inbox";
+}
+
 export interface PanelContext {
   app: App;
   index: TaskIndex;
@@ -125,6 +138,7 @@ export interface PanelContext {
   getSettings: () => Settings;
   saveSettings: () => Promise<void>;
   onQuickAdd: (targetPath?: string) => void;
+  onEditTask: (task: Task) => void;
 }
 
 export interface TaskPanelOptions {
@@ -140,7 +154,8 @@ export interface TaskPanelOptions {
  * Superficie task condivisa: filter-bar compatta + gruppi accordion, guidata da
  * un unico oggetto di stato { filter, sort, group, collapsed[] }. La sidebar e
  * la scheda piena sono lo stesso componente a due densità (flag `compact`).
- * Il segmento "Oggi" rende il Focus (In ritardo / Oggi / Attenzione).
+ * Le viste primarie sono Inbox / Oggi / Prossimi / Tutti. Inbox e Oggi sono
+ * liste operative semplici; filtri e raggruppamenti avanzati restano secondari.
  */
 export class TaskPanel {
   private readonly container: HTMLElement;
@@ -177,6 +192,7 @@ export class TaskPanel {
     this.ctx = ctx;
     this.options = options;
     this.state = {
+      view: initial.view ?? viewFromLegacyDue(initial.filter?.due ?? DEFAULT_FILTER.due),
       filter: { ...structuredClone(DEFAULT_FILTER), ...(initial.filter ?? {}) },
       sort: initial.sort ?? "due",
       group: initial.group ?? "note",
@@ -206,6 +222,7 @@ export class TaskPanel {
 
   getState(): TaskPanelState {
     return {
+      view: this.state.view,
       filter: { ...this.state.filter },
       sort: this.state.sort,
       group: this.state.group,
@@ -266,18 +283,19 @@ export class TaskPanel {
     if (!bar) return;
     bar.empty();
 
-    // Riga segmenti temporali (slicer primario).
+    // Navigazione primaria.
     const segRow = bar.createDiv({ cls: "kairos-filterbar__row" });
     const segments = segRow.createDiv({ cls: "kairos-segments" });
-    for (const [value, label] of DUE_SEGMENTS) {
-      const active = this.state.filter.due === value;
+    for (const [value, label] of PANEL_VIEWS) {
+      const active = this.state.view === value;
       const segment = segments.createEl("button", {
         cls: `kairos-segment${active ? " is-active" : ""}`,
         text: label,
       });
       segment.addEventListener("click", () =>
         this.update(() => {
-          this.state.filter.due = value;
+          this.state.view = value;
+          this.state.filter.due = dueForView(value);
           this.state.filter.exactDay = null;
         }),
       );
@@ -305,11 +323,11 @@ export class TaskPanel {
       }),
     );
 
-    // Su "Oggi" il Focus ha una struttura fissa: Raggruppa è inerte.
-    if (this.state.filter.due === "today") {
+    // Inbox e Oggi sono liste operative semplici.
+    if (this.state.view === "inbox" || this.state.view === "today") {
       const groupBtn = controlEnd.createEl("button", { cls: "kairos-iconbtn is-disabled" });
       setIcon(groupBtn, "layout-list");
-      groupBtn.setAttribute("aria-label", "Raggruppa non disponibile su Oggi");
+      groupBtn.setAttribute("aria-label", `Raggruppa non disponibile in ${this.state.view === "inbox" ? "Inbox" : "Oggi"}`);
       groupBtn.disabled = true;
     } else {
       this.iconMenu(controlEnd, "layout-list", "Raggruppa", GROUP_OPTIONS, this.state.group, (value) =>
@@ -521,20 +539,25 @@ export class TaskPanel {
     this.rowEls = [];
     const today = todayString();
 
-    // Segmento "Oggi" → Focus (In ritardo / Oggi / Attenzione).
-    if (this.state.filter.due === "today") {
-      this.renderTodayFocus(results, today);
-      this.finalizeSelectionAndCursor();
-      return;
-    }
+    const settings = this.ctx.getSettings();
+    const sourceTasks = this.state.view === "inbox"
+      ? this.ctx.index.getAll().filter((task) => normalizeMarkdownPath(task.file) === normalizeMarkdownPath(settings.inboxPath))
+      : this.ctx.index.getAll();
+    const effectiveFilter: TaskFilter = {
+      ...this.state.filter,
+      due: dueForView(this.state.view),
+      exactDay: null,
+    };
+    const effectiveGroup: GroupKey =
+      this.state.view === "inbox" || this.state.view === "today" ? "none" : this.state.group;
 
     const groups = groupTasks(
-      this.ctx.index.getAll(),
-      this.state.filter,
+      sourceTasks,
+      effectiveFilter,
       this.state.sort,
-      this.state.group,
+      effectiveGroup,
       today,
-      { inboxPath: this.ctx.getSettings().inboxPath },
+      { inboxPath: settings.inboxPath },
     );
     this.lastGroupKeys = groups.filter((group) => group.label !== "").map((group) => group.key);
     this.taskByKey = new Map();
@@ -546,13 +569,23 @@ export class TaskPanel {
       this.pruneSelection();
       this.cursor = -1;
       this.renderBulkBar();
-      results.createDiv({ cls: "kairos-empty", text: "Nessun task corrisponde ai filtri." });
+      const emptyText =
+        this.activeFilterCount() > 0 || this.state.filter.text.trim() !== ""
+          ? "Nessun task corrisponde ai filtri."
+          : this.state.view === "inbox"
+            ? "Inbox vuota. Usa + per catturare un task."
+            : this.state.view === "today"
+              ? "Nessun task da fare oggi."
+              : this.state.view === "upcoming"
+                ? "Nessun task programmato."
+                : "Nessun task attivo.";
+      results.createDiv({ cls: "kairos-empty", text: emptyText });
       return;
     }
 
     for (const group of groups) {
-      const isInbox = this.state.group === "note" && group.key === "0-inbox";
-      const showNote = this.state.group !== "note" || isInbox;
+      const isInbox = effectiveGroup === "note" && group.key === "0-inbox";
+      const showNote = effectiveGroup !== "note" || isInbox;
 
       // Il bucket unico senza etichetta (group = none) non è un accordion.
       if (group.label === "") {
@@ -576,7 +609,7 @@ export class TaskPanel {
       head.createSpan({ cls: "kairos-group__count", text: String(group.tasks.length) });
 
       const notePath = group.tasks[0]?.file;
-      if (this.state.group === "note" && !isInbox && notePath !== undefined) {
+      if (effectiveGroup === "note" && !isInbox && notePath !== undefined) {
         const spacer = head.createDiv({ cls: "kairos-group__actions" });
         const addHere = spacer.createSpan({ cls: "kairos-group__act" });
         setIcon(addHere, "plus");
@@ -665,78 +698,6 @@ export class TaskPanel {
     }
   }
 
-  // ── Focus di Oggi (In ritardo / Oggi / Attenzione) ──────────────────
-
-  private renderTodayFocus(results: HTMLElement, today: string): void {
-    // Il Focus ignora il filtro di stato/data e calcola i propri attivi, ma
-    // rispetta ricerca/tag/cartella/priorità impostati.
-    const focusFilter: TaskFilter = {
-      ...this.state.filter,
-      due: "all",
-      exactDay: null,
-      statuses: OPEN_STATUSES,
-    };
-    const active = sortTasks(
-      this.ctx.index.getAll().filter((task) => matchesTask(task, focusFilter, today)),
-      this.state.sort,
-    );
-
-    const used = new Set<string>();
-    const overdue = active.filter((task) => task.due !== null && task.due < today);
-    overdue.forEach((task) => used.add(taskKey(task)));
-    const dueToday = active.filter((task) => task.due === today && !used.has(taskKey(task)));
-    dueToday.forEach((task) => used.add(taskKey(task)));
-    const attention = active.filter(
-      (task) =>
-        !used.has(taskKey(task)) &&
-        (task.status === "inProgress" || task.priority === "highest" || task.priority === "high"),
-    );
-
-    this.lastGroupKeys = ["focus-overdue", "focus-today", "focus-attention"];
-    this.taskByKey = new Map();
-    for (const task of [...overdue, ...dueToday, ...attention]) this.taskByKey.set(taskKey(task), task);
-    this.reconcileSelection();
-
-    this.renderFocusSection(results, "focus-overdue", "In ritardo", overdue, today);
-    this.renderFocusSection(results, "focus-today", "Oggi", dueToday, today);
-    this.renderFocusSection(results, "focus-attention", "Attenzione", attention, today);
-  }
-
-  private renderFocusSection(
-    results: HTMLElement,
-    key: string,
-    label: string,
-    tasks: Task[],
-    today: string,
-  ): void {
-    const collapsed = this.collapsed.has(key);
-    const section = results.createDiv({
-      cls: `kairos-group${collapsed ? " is-collapsed" : ""}`,
-    });
-    const head = section.createDiv({
-      cls: "kairos-group__head",
-      attr: { role: "button", "aria-expanded": String(!collapsed), tabindex: "0" },
-    });
-    setIcon(head.createSpan({ cls: "kairos-group__chevron" }), "chevron-right");
-    head.createSpan({ cls: "kairos-group__title", text: label });
-    head.createSpan({ cls: "kairos-group__count", text: String(tasks.length) });
-    head.addEventListener("click", () => this.toggleCollapse(key));
-    head.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        this.toggleCollapse(key);
-      }
-    });
-
-    if (collapsed) return;
-    const body = section.createDiv({ cls: "kairos-group__body" });
-    if (tasks.length === 0) {
-      body.createDiv({ cls: "kairos-empty", text: "—" });
-      return;
-    }
-    this.renderRows(body, key, tasks, today, true);
-  }
-
   // ── Riga ────────────────────────────────────────────────────────────
 
   private renderTask(
@@ -780,6 +741,21 @@ export class TaskPanel {
     if (project) {
       metaRow.createSpan({ cls: "kairos-pill kairos-tag", text: project.split("/").pop() ?? project });
     }
+    if (task.detailPath) {
+      const detail = metaRow.createSpan({ cls: "kairos-pill kairos-detail-link", text: "Dettagli" });
+      detail.setAttribute("role", "link");
+      detail.setAttribute("tabindex", "0");
+      const openDetail = (event: Event) => {
+        event.stopPropagation();
+        void this.openFile(task.detailPath!);
+      };
+      detail.addEventListener("click", openDetail);
+      detail.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openDetail(event);
+      });
+    }
     if (showNote) {
       const source = metaRow.createSpan({ cls: "kairos-source", text: noteTitle(task.file) });
       source.addEventListener("click", (event) => {
@@ -810,7 +786,7 @@ export class TaskPanel {
         this.selectRange(index);
         return;
       }
-      void this.openFile(task.file, task.line);
+      this.ctx.onEditTask(task);
     });
     return row;
   }
@@ -823,6 +799,9 @@ export class TaskPanel {
 
     menu.addItem((item) =>
       item.setTitle("Apri nota").setIcon("file-symlink").onClick(() => void this.openFile(task.file, task.line)),
+    );
+    menu.addItem((item) =>
+      item.setTitle("Modifica task").setIcon("pencil").onClick(() => this.ctx.onEditTask(task)),
     );
     if (this.canOpenInspector()) {
       menu.addItem((item) =>
@@ -967,7 +946,11 @@ export class TaskPanel {
         if (task && this.canOpenInspector()) this.options.onOpenInspector?.(task);
         break;
       }
-      case "Enter":
+      case "Enter": {
+        const task = this.cursorTask();
+        if (task) this.ctx.onEditTask(task);
+        break;
+      }
       case "o":
         this.openCursor();
         break;
@@ -1182,6 +1165,7 @@ export class TaskPanel {
 
   private applyView(view: SavedView): void {
     this.state.filter = { ...structuredClone(DEFAULT_FILTER), ...view.filter };
+    this.state.view = viewFromLegacyDue(this.state.filter.due);
     this.state.sort = view.sort;
     this.state.group = view.group;
     if (this.searchInputEl) this.searchInputEl.value = this.state.filter.text;

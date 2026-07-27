@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createInboxContent, insertTaskAtTop } from "../src/core/dailyInsert";
+import { createInboxContent, ensureDailyTasksBlock, insertTaskAtTop } from "../src/core/dailyInsert";
 
 describe("insertTaskAtTop", () => {
   it("crea l'intestazione in un file vuoto", () => {
@@ -51,5 +51,17 @@ describe("insertTaskAtTop", () => {
 describe("createInboxContent", () => {
   it("crea Inbox strutturata con il primo task", () => {
     expect(createInboxContent("- [ ] Primo")).toBe("# Inbox\n\n## Task\n- [ ] Primo\n");
+  });
+});
+
+describe("ensureDailyTasksBlock", () => {
+  it("aggiunge la proiezione dopo il titolo della daily", () => {
+    expect(ensureDailyTasksBlock("# 27 luglio\n\nNote\n"))
+      .toBe("# 27 luglio\n\n## Task\n```kairos-tasks\n```\n\nNote\n");
+  });
+
+  it("non duplica un blocco esistente", () => {
+    const content = "# Giorno\n\n## Task\n```kairos-tasks\n```\n";
+    expect(ensureDailyTasksBlock(content)).toBe(content);
   });
 });

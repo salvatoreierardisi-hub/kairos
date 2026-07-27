@@ -1,5 +1,31 @@
 import { describe, it, expect } from "vitest";
-import { addTagLine, setDueLine, setPriorityLine } from "../src/core/updateLine";
+import { addTagLine, setDueLine, setPriorityLine, setTaskTextLine } from "../src/core/updateLine";
+
+describe("setTaskTextLine", () => {
+  it("modifica il testo preservando tutti i metadati", () => {
+    expect(setTaskTextLine(
+      "- [/] Vecchio testo ⏫ 📅 2026-07-29 #progetto/kairos",
+      "Nuovo testo",
+    )).toBe("- [/] Nuovo testo ⏫ 📅 2026-07-29 #progetto/kairos");
+  });
+
+  it("preserva la data di completamento", () => {
+    expect(setTaskTextLine("- [x] Vecchio ✅ 2026-07-27", "Nuovo"))
+      .toBe("- [x] Nuovo ✅ 2026-07-27");
+  });
+
+  it("preserva il collegamento Dettagli e il block ID", () => {
+    expect(setTaskTextLine(
+      "- [ ] Vecchio [[_inbox/Dettagli/Vecchio|Dettagli]] ^kairos-a1b2",
+      "Nuovo",
+    )).toBe("- [ ] Nuovo [[_inbox/Dettagli/Vecchio|Dettagli]] ^kairos-a1b2");
+  });
+
+  it("ignora testo vuoto e righe non task", () => {
+    expect(setTaskTextLine("- [ ] Testo", "   ")).toBe("- [ ] Testo");
+    expect(setTaskTextLine("Testo libero", "Altro")).toBe("Testo libero");
+  });
+});
 
 describe("setDueLine", () => {
   it("aggiunge una scadenza a una riga senza data", () => {
@@ -15,6 +41,13 @@ describe("setDueLine", () => {
   it("rimuove la scadenza quando due è null", () => {
     expect(setDueLine("- [ ] Chiamare Marco 📅 2026-07-05", null))
       .toBe("- [ ] Chiamare Marco");
+  });
+
+  it("mantiene il block ID in coda quando cambia data", () => {
+    expect(setDueLine(
+      "- [ ] Task [[Dettagli/Task|Dettagli]] ^kairos-a1b2",
+      "2026-08-02",
+    )).toBe("- [ ] Task 📅 2026-08-02 [[Dettagli/Task|Dettagli]] ^kairos-a1b2");
   });
 
   it("preserva il marcatore di completamento in coda", () => {

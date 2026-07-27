@@ -4,3 +4,9 @@ main.js
 .DS_Store
 data.json
 .superpowers/
+.kairos-private/
+AGENTS.md
+CLAUDE.md
+.env
+.env.*
+!.env.example

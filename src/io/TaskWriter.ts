@@ -1,37 +1,59 @@
-import { App, Notice, TFile, TFolder, normalizePath } from "obsidian";
+import { App, TFile, TFolder, normalizePath } from "obsidian";
 import { Task, NewTaskInput, Settings, TaskStatus, Priority } from "../types";
 import { formatTaskLine } from "../core/format";
 import { createInboxContent, insertTaskAtTop } from "../core/dailyInsert";
-import { isAutomaticTaskPath, resolveAutomaticTarget } from "../core/placement";
 import { locateTaskLine, locateTaskLines } from "../core/taskLine";
 import { setStatusLine, toggleLine } from "../core/toggleLine";
-import { addTagLine, setDueLine, setPriorityLine } from "../core/updateLine";
-import { DailyNotesConfigService } from "./DailyNotesConfig";
+import { addTagLine, setDueLine, setPriorityLine, setTaskTextLine } from "../core/updateLine";
+import { detailFolder, detailNoteContent, detailTitle } from "../core/taskDetail";
 
 function markdownPath(path: string): string {
   const normalized = normalizePath(path);
   return normalized.toLowerCase().endsWith(".md") ? normalized : `${normalized}.md`;
 }
 
+export interface CreatedTask {
+  file: TFile;
+  line: number;
+  detailFile?: TFile;
+}
+
 export class TaskWriter {
   constructor(
     private app: App,
     private getSettings: () => Settings,
-    private dailyNotes: DailyNotesConfigService,
   ) {}
 
-  async addTask(input: NewTaskInput): Promise<void> {
+  async addTask(input: NewTaskInput): Promise<CreatedTask> {
     const line = formatTaskLine(input);
     if (input.targetPath) {
-      await this.insertInNote(markdownPath(input.targetPath), line);
-      return;
+      return await this.insertInNote(markdownPath(input.targetPath), line);
     }
+    return await this.insertInInbox(line);
+  }
 
-    if (input.due) {
-      await this.insertInDaily(input.due, line);
-      return;
+  async addTaskWithDetail(input: NewTaskInput): Promise<CreatedTask> {
+    if (input.targetPath) return await this.addTask(input);
+
+    const title = detailTitle(input.text);
+    const detailPath = await this.availableDetailPath(title);
+    const blockId = this.newBlockId();
+    const sourcePath = markdownPath(this.getSettings().inboxPath);
+    const detailFile = await this.createFile(
+      detailPath,
+      detailNoteContent(title, sourcePath, blockId),
+    );
+    try {
+      const created = await this.addTask({
+        ...input,
+        detailPath,
+        blockId,
+      });
+      return { ...created, detailFile };
+    } catch (error) {
+      await this.app.fileManager.trashFile(detailFile).catch(() => undefined);
+      throw error;
     }
-    await this.insertInInbox(line);
   }
 
   async toggleTask(task: Task): Promise<void> {
@@ -43,39 +65,7 @@ export class TaskWriter {
   }
 
   async setDue(task: Task, due: string | null): Promise<void> {
-    const settings = this.getSettings();
-    const daily = await this.dailyNotes.resolve();
-    if (!isAutomaticTaskPath(task.file, settings.inboxPath, daily.folder)) {
-      await this.updateTaskLine(task, (line) => setDueLine(line, due));
-      return;
-    }
-
-    const prepared = due ? await this.dailyNotes.prepare(due) : null;
-    const target = resolveAutomaticTarget(due, settings.inboxPath, prepared?.path ?? null);
-    const sourcePath = normalizePath(task.file);
-    const file = this.app.vault.getAbstractFileByPath(sourcePath);
-    if (!(file instanceof TFile)) throw new Error(`Nota sorgente non trovata: ${sourcePath}`);
-    const sourceLines = (await this.app.vault.read(file)).split("\n");
-    const sourceIndex = locateTaskLine(sourceLines, task.line, task.source);
-    const updatedLine = setDueLine(sourceLines[sourceIndex], due);
-
-    if (normalizePath(target) === sourcePath) {
-      sourceLines[sourceIndex] = updatedLine;
-      await this.app.vault.modify(file, sourceLines.join("\n"));
-      return;
-    }
-
-    if (due) await this.insertPreparedDaily(prepared!, updatedLine);
-    else await this.insertInInbox(updatedLine);
-
-    const latestLines = (await this.app.vault.read(file)).split("\n");
-    const latestIndex = locateTaskLine(latestLines, sourceIndex, task.source);
-    latestLines.splice(latestIndex, 1);
-    try {
-      await this.app.vault.modify(file, latestLines.join("\n"));
-    } catch (error) {
-      throw new Error(`task copiato nella destinazione ma non rimosso dalla sorgente: ${String(error)}`);
-    }
+    await this.updateTaskLine(task, (line) => setDueLine(line, due));
   }
 
   async addTag(task: Task, tag: string): Promise<void> {
@@ -84,6 +74,18 @@ export class TaskWriter {
 
   async setPriority(task: Task, priority: Priority | null): Promise<void> {
     await this.updateTaskLine(task, (line) => setPriorityLine(line, priority));
+  }
+
+  async updateTask(
+    task: Task,
+    update: { text: string; due: string | null; priority: Priority | null; status: TaskStatus },
+  ): Promise<void> {
+    await this.updateTaskLine(task, (line) => {
+      let next = setTaskTextLine(line, update.text);
+      next = setDueLine(next, update.due);
+      next = setPriorityLine(next, update.priority);
+      return setStatusLine(next, update.status, this.todayString());
+    });
   }
 
   async deleteTask(task: Task): Promise<void> {
@@ -134,43 +136,31 @@ export class TaskWriter {
     await this.app.vault.modify(file, lines.join("\n"));
   }
 
-  private async insertInInbox(line: string): Promise<void> {
+  private async insertInInbox(line: string): Promise<CreatedTask> {
     const path = markdownPath(this.getSettings().inboxPath);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
       const content = await this.app.vault.read(existing);
-      await this.app.vault.modify(existing, insertTaskAtTop(content, line));
-      return;
+      const updated = insertTaskAtTop(content, line);
+      await this.app.vault.modify(existing, updated);
+      return { file: existing, line: this.findInsertedLine(updated, line) };
     }
-    await this.createFile(path, createInboxContent(line));
+    const content = createInboxContent(line);
+    const file = await this.createFile(path, content);
+    return { file, line: this.findInsertedLine(content, line) };
   }
 
-  private async insertInDaily(date: string, line: string): Promise<void> {
-    await this.insertPreparedDaily(await this.dailyNotes.prepare(date), line);
-  }
-
-  private async insertPreparedDaily(
-    prepared: Awaited<ReturnType<DailyNotesConfigService["prepare"]>>,
-    line: string,
-  ): Promise<void> {
-    const existing = this.app.vault.getAbstractFileByPath(prepared.path);
-    if (existing instanceof TFile) {
-      const content = await this.app.vault.read(existing);
-      await this.app.vault.modify(existing, insertTaskAtTop(content, line));
-    } else {
-      await this.createFile(prepared.path, insertTaskAtTop(prepared.initialContent, line));
-    }
-    if (prepared.warning) new Notice(`Kairos: ${prepared.warning}`);
-  }
-
-  private async insertInNote(path: string, line: string): Promise<void> {
+  private async insertInNote(path: string, line: string): Promise<CreatedTask> {
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
       const content = await this.app.vault.read(existing);
-      await this.app.vault.modify(existing, insertTaskAtTop(content, line));
-      return;
+      const updated = insertTaskAtTop(content, line);
+      await this.app.vault.modify(existing, updated);
+      return { file: existing, line: this.findInsertedLine(updated, line) };
     }
-    await this.createFile(path, insertTaskAtTop("", line));
+    const content = insertTaskAtTop("", line);
+    const file = await this.createFile(path, content);
+    return { file, line: this.findInsertedLine(content, line) };
   }
 
   private async createFile(path: string, content: string): Promise<TFile> {
@@ -188,6 +178,28 @@ export class TaskWriter {
       if (existing) throw new Error(`Impossibile creare la cartella: ${current}`);
       await this.app.vault.createFolder(current);
     }
+  }
+
+  private async availableDetailPath(title: string): Promise<string> {
+    const folder = detailFolder(this.getSettings().inboxPath);
+    for (let suffix = 1; suffix < 10_000; suffix++) {
+      const name = suffix === 1 ? title : `${title} ${suffix}`;
+      const path = markdownPath(`${folder}/${name}`);
+      if (!this.app.vault.getAbstractFileByPath(path)) return path;
+    }
+    throw new Error("Impossibile trovare un nome libero per la nota Dettagli");
+  }
+
+  private newBlockId(): string {
+    const time = Date.now().toString(36);
+    const random = Math.random().toString(36).slice(2, 8);
+    return `kairos-${time}-${random}`;
+  }
+
+  private findInsertedLine(content: string, line: string): number {
+    const index = content.split(/\r?\n/).findIndex((candidate) => candidate === line);
+    if (index === -1) throw new Error("Task creato ma posizione non trovata");
+    return index;
   }
 
   private todayString(): string {

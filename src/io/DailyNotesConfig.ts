@@ -97,6 +97,17 @@ export class DailyNotesConfigService {
     return { path, title, initialContent, warning };
   }
 
+  async dateForPath(path: string): Promise<string | null> {
+    const config = await this.resolve();
+    const normalized = normalizePath(path);
+    const folder = normalizePath(config.folder);
+    const prefix = folder ? `${folder}/` : "";
+    if (prefix && !normalized.startsWith(prefix)) return null;
+    const relative = normalized.slice(prefix.length).replace(/\.md$/i, "");
+    const day = makeMoment(relative, config.format, true);
+    return day.isValid() ? day.format("YYYY-MM-DD") : null;
+  }
+
   private async readObsidianConfig(): Promise<ObsidianDailyNotesData | null> {
     const path = normalizePath(`${this.app.vault.configDir}/daily-notes.json`);
     try {

@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
 import { TaskPanel, PanelContext } from "./TaskPanel";
-import { Settings } from "../types";
+import { Settings, Task } from "../types";
 
 export const VIEW_TYPE_KAIROS_SIDEBAR = "kairos-sidebar-view";
 
@@ -21,6 +21,7 @@ export class SidebarView extends ItemView {
     private getSettings: () => Settings,
     private saveSettings: () => Promise<void>,
     private onQuickAdd: (targetPath?: string) => void,
+    private onEditTask: (task: Task) => void,
     private onExpand: () => void,
   ) {
     super(leaf);
@@ -43,6 +44,7 @@ export class SidebarView extends ItemView {
       getSettings: this.getSettings,
       saveSettings: this.saveSettings,
       onQuickAdd: this.onQuickAdd,
+      onEditTask: this.onEditTask,
     };
 
     this.panel = new TaskPanel(

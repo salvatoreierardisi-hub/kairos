@@ -40,11 +40,11 @@ export class KairosSettingTab extends PluginSettingTab {
         );
     };
 
-    field("File Inbox", "Dove finiscono i task automatici senza data.", "inboxPath", "_inbox/Inbox.md");
+    field("File Inbox", "Casa stabile dei task creati con la cattura globale, anche quando hanno una data.", "inboxPath", "_inbox/Inbox.md");
 
     new Setting(containerEl)
       .setName("Configurazione daily")
-      .setDesc("Eredita cartella, formato e template da Daily Notes oppure usa i valori Kairos.")
+      .setDesc("Serve a riconoscere le daily e mostrarvi la proiezione interattiva dei task.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("obsidian", "Eredita da Obsidian")

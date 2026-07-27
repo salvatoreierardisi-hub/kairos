@@ -48,6 +48,7 @@ export class AttivitaView extends ItemView {
     private getSettings: () => Settings,
     private saveSettings: () => Promise<void>,
     private onQuickAdd: (targetPath?: string) => void,
+    private onEditTask: (task: Task) => void,
   ) {
     super(leaf);
   }
@@ -70,6 +71,7 @@ export class AttivitaView extends ItemView {
       getSettings: this.getSettings,
       saveSettings: this.saveSettings,
       onQuickAdd: this.onQuickAdd,
+      onEditTask: this.onEditTask,
     };
 
     this.panel = new TaskPanel(

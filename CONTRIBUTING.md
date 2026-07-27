@@ -1,23 +1,33 @@
-# Contribuire a Kairos
+# Contributing to Kairos
 
-Grazie per l'interesse. Prima di aprire una pull request, descrivi il problema o la
-proposta in una issue.
+Thanks for your interest in Kairos. Before starting a substantial change, open an issue
+that describes the user problem and the proposed behavior.
 
-## Ambiente locale
+## Local setup
 
 ```bash
 npm install
 npm test
+npx tsc --noEmit
 npm run build
 ```
 
-La logica di dominio vive in `src/core/` e deve restare pura e coperta da test. Il codice
-che integra Obsidian vive in `src/io/`, `src/view/`, `src/settings/` e `src/main.ts`.
+## Project boundaries
 
-## Pull request
+- Keep domain logic in `src/core/` pure, synchronous, and independent from `obsidian`.
+- Add or update Vitest coverage when changing domain behavior.
+- Keep Obsidian integration in `src/index/`, `src/io/`, `src/view/`, `src/settings/`,
+  or `src/main.ts`.
+- Do not introduce runtime dependencies beyond `obsidian`.
+- Do not persist a second copy of a task outside `TaskIndex`; the Markdown line is the
+  source of truth.
+- Keep Inbox paths, daily-note configuration, and tag prefixes configurable.
 
-- Mantieni le modifiche mirate e spiega il comportamento utente che cambia.
-- Aggiungi o aggiorna i test quando tocchi `src/core/`.
-- Verifica `npm test` e `npm run build` prima di aprire la pull request.
-- Non introdurre dipendenze runtime oltre a `obsidian`.
+## Pull requests
 
+- Keep each pull request focused on one user-visible outcome.
+- Explain what changed, why it changed, and how it was verified.
+- Include screenshots for visual changes.
+- Run the full test, type-check, and build sequence before opening the pull request.
+- Do not commit generated `main.js`, local vault paths, private notes, or development
+  context.

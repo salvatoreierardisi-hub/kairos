@@ -1,9 +1,9 @@
 {
   "id": "kairos",
   "name": "Kairos",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "1.5.0",
-  "description": "Plugin di gestione dei task per Obsidian, con cattura rapida, note progetto e daily automatiche.",
+  "description": "Local-first Markdown task management with fast capture, project notes, and daily-note projections.",
   "author": "Salvo",
   "isDesktopOnly": false
 }

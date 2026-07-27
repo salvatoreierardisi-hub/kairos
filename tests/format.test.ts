@@ -31,4 +31,14 @@ describe("formatTaskLine", () => {
     expect(formatTaskLine({ text: "X", due: "2026-07-05", important: true }))
       .toBe("- [ ] X ⏫ 📅 2026-07-05");
   });
+
+  it("aggiunge link Dettagli e block ID in coda", () => {
+    expect(formatTaskLine({
+      text: "Approfondire",
+      due: null,
+      important: false,
+      detailPath: "_inbox/Dettagli/Approfondire.md",
+      blockId: "kairos-a1b2",
+    })).toBe("- [ ] Approfondire [[_inbox/Dettagli/Approfondire|Dettagli]] ^kairos-a1b2");
+  });
 });

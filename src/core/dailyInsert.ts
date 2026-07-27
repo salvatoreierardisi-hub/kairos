@@ -32,3 +32,11 @@ export function insertTaskAtTop(content: string, line: string, heading = "## Tas
 export function createInboxContent(line: string): string {
   return `# Inbox\n\n## Task\n${line}\n`;
 }
+
+export const DAILY_TASKS_BLOCK = "```kairos-tasks\n```";
+
+/** Inserisce una sola proiezione Kairos nella sezione Task della daily. */
+export function ensureDailyTasksBlock(content: string): string {
+  if (/^```kairos-tasks(?:\s.*)?$/m.test(content)) return content;
+  return insertTaskAtTop(content, DAILY_TASKS_BLOCK);
+}

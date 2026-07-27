@@ -1,5 +1,6 @@
 export type TaskStatus = "open" | "inProgress" | "done" | "cancelled";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest";
+export type PanelView = "inbox" | "today" | "upcoming" | "all";
 
 export interface Task {
   text: string;
@@ -12,6 +13,10 @@ export interface Task {
   line: number;       // riga 0-based
   /** Riga Markdown esatta letta dall'indice; usata per validare le scritture. */
   source: string;
+  /** Nota di approfondimento collegata con alias `Dettagli`, se presente. */
+  detailPath?: string;
+  /** Identificatore Obsidian stabile del blocco task (`^kairos-...`). */
+  blockId?: string;
 }
 
 export type DailyConfigMode = "obsidian" | "custom";
@@ -48,6 +53,8 @@ export interface NewTaskInput {
   important: boolean;
   /** Se impostato, il task viene scritto in questa nota (override della risoluzione da settings). */
   targetPath?: string;
+  detailPath?: string;
+  blockId?: string;
 }
 
 import type { TaskFilter, GroupKey } from "./core/query";
@@ -62,6 +69,7 @@ export interface SavedView {
 
 /** Stato pilotante del TaskPanel. Tipi puri (no `obsidian`) così vive nei Settings. */
 export interface TaskPanelState {
+  view: PanelView;
   filter: TaskFilter;
   sort: SortKey;
   group: GroupKey;

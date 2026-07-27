@@ -46,4 +46,15 @@ describe("toggleLine", () => {
   it("setStatusLine da done a cancelled rimuove ✅", () => {
     expect(setStatusLine("- [x] task ✅ 2026-07-05", "cancelled", "2026-07-05")).toBe("- [-] task");
   });
+
+  it("mantiene il block ID in coda quando completa e riapre", () => {
+    const done = toggleLine(
+      "- [ ] task [[Dettagli/task|Dettagli]] ^kairos-a1b2",
+      "open",
+      "2026-07-05",
+    );
+    expect(done).toBe("- [x] task [[Dettagli/task|Dettagli]] ✅ 2026-07-05 ^kairos-a1b2");
+    expect(toggleLine(done, "done", "2026-07-05"))
+      .toBe("- [ ] task [[Dettagli/task|Dettagli]] ^kairos-a1b2");
+  });
 });

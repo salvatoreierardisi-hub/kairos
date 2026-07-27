@@ -1,5 +1,5 @@
-import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
-import { Settings, DEFAULT_SETTINGS, NewTaskInput } from "./types";
+import { normalizePath, Notice, Platform, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { Settings, DEFAULT_SETTINGS, Task } from "./types";
 import { TaskIndex } from "./index/TaskIndex";
 import { TaskWriter } from "./io/TaskWriter";
 import { DailyNotesConfigService, EffectiveDailyConfig } from "./io/DailyNotesConfig";
@@ -7,20 +7,37 @@ import { AttivitaView, VIEW_TYPE_KAIROS } from "./view/AttivitaView";
 import { SidebarView, VIEW_TYPE_KAIROS_SIDEBAR } from "./view/SidebarView";
 import { QuickAddModal } from "./view/QuickAddModal";
 import { KairosSettingTab } from "./settings/SettingsTab";
+import { DailyTasksBlock } from "./view/DailyTasksBlock";
+import { ensureDailyTasksBlock } from "./core/dailyInsert";
 
 export default class KairosPlugin extends Plugin {
   settings: Settings = DEFAULT_SETTINGS;
   private index!: TaskIndex;
   private writer!: TaskWriter;
   private dailyNotes!: DailyNotesConfigService;
+  private uiSaveTimer: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    try {
+      await this.migrateLegacyInbox();
+    } catch (error) {
+      new Notice(`Kairos: migrazione Inbox non riuscita — ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     this.index = new TaskIndex(this.app);
     this.dailyNotes = new DailyNotesConfigService(this.app, () => this.settings);
-    this.writer = new TaskWriter(this.app, () => this.settings, this.dailyNotes);
+    this.writer = new TaskWriter(this.app, () => this.settings);
     this.index.registerVaultEvents(this);
+
+    this.registerMarkdownCodeBlockProcessor("kairos-tasks", async (_source, el, ctx) => {
+      const date = await this.dailyNotes.dateForPath(ctx.sourcePath);
+      if (!date) {
+        el.createDiv({ cls: "kairos-daily-empty", text: "Questa vista Kairos funziona dentro una daily configurata." });
+        return;
+      }
+      ctx.addChild(new DailyTasksBlock(el, this.app, date, this.index, this.writer, (task) => this.openTaskEditor(task)));
+    });
 
     this.registerView(
       VIEW_TYPE_KAIROS,
@@ -30,8 +47,9 @@ export default class KairosPlugin extends Plugin {
           this.index,
           this.writer,
           () => this.settings,
-          () => this.saveSettings(),
+          () => this.saveUiState(),
           (targetPath?: string) => this.openQuickAdd(targetPath),
+          (task: Task) => this.openTaskEditor(task),
         ),
     );
 
@@ -43,18 +61,35 @@ export default class KairosPlugin extends Plugin {
           this.index,
           this.writer,
           () => this.settings,
-          () => this.saveSettings(),
+          () => this.saveUiState(),
           (targetPath?: string) => this.openQuickAdd(targetPath),
+          (task: Task) => this.openTaskEditor(task),
           () => this.activateView(),
         ),
     );
 
-    this.addRibbonIcon("circle-check", "Kairos", () => this.activateView());
-    this.addCommand({ id: "open-kairos", name: "Apri Kairos", callback: () => this.activateView() });
+    this.addRibbonIcon("circle-check", "Kairos", () =>
+      Platform.isMobile ? this.activateView() : this.activateSidebar(),
+    );
+    this.addCommand({
+      id: "open-kairos",
+      name: "Apri Kairos come pagina",
+      callback: () => this.activateView(),
+    });
     this.addCommand({
       id: "quick-add-task",
-      name: "Nuovo task (Kairos)",
-      callback: () => this.openQuickAdd(this.app.workspace.getActiveFile()?.path),
+      name: "Nuovo task in Inbox (Kairos)",
+      callback: () => this.openQuickAdd(),
+    });
+    this.addCommand({
+      id: "quick-add-task-in-current-note",
+      name: "Nuovo task nella nota corrente (Kairos)",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) return false;
+        if (!checking) this.openQuickAdd(file.path);
+        return true;
+      },
     });
     this.addCommand({
       id: "open-kairos-sidebar",
@@ -64,15 +99,49 @@ export default class KairosPlugin extends Plugin {
 
     this.addSettingTab(new KairosSettingTab(this.app, this));
 
-    this.app.workspace.onLayoutReady(() => this.index.build());
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        if (file) void this.ensureDailyProjection(file);
+      }),
+    );
+
+    this.app.workspace.onLayoutReady(() => {
+      void this.index.build();
+      const active = this.app.workspace.getActiveFile();
+      if (active) void this.ensureDailyProjection(active);
+      if (Platform.isMobile) void this.prepareMobileSidebar();
+    });
   }
 
   private openQuickAdd(targetPath?: string): void {
     new QuickAddModal(
       this.app,
-      async (input: NewTaskInput) => {
+      async (input) => {
         try {
-          await this.writer.addTask(input);
+          const taskInput = {
+            text: input.text,
+            due: input.due,
+            priority: input.priority,
+            important: false,
+            targetPath: input.targetPath,
+          };
+          if (input.createMode === "create") {
+            await this.writer.addTask(taskInput);
+            return;
+          }
+
+          if (input.targetPath) {
+            const created = await this.writer.addTask(taskInput);
+            await this.app.workspace.getLeaf("tab").openFile(created.file, {
+              eState: { line: created.line },
+            });
+            return;
+          }
+
+          const created = await this.writer.addTaskWithDetail(taskInput);
+          if (created.detailFile) {
+            await this.app.workspace.getLeaf("tab").openFile(created.detailFile);
+          }
         } catch (err) {
           new Notice("Kairos: impossibile salvare il task — " + (err instanceof Error ? err.message : String(err)));
           throw err;
@@ -80,6 +149,49 @@ export default class KairosPlugin extends Plugin {
       },
       targetPath,
     ).open();
+  }
+
+  private openTaskEditor(task: Task): void {
+    new QuickAddModal(
+      this.app,
+      async (input) => {
+        try {
+          await this.writer.updateTask(task, {
+            text: input.text,
+            due: input.due,
+            priority: input.priority,
+            status: input.status,
+          });
+        } catch (err) {
+          new Notice("Kairos: impossibile aggiornare il task — " + (err instanceof Error ? err.message : String(err)));
+          throw err;
+        }
+      },
+      task.file,
+      task,
+      (source) => void this.openTaskSource(source),
+    ).open();
+  }
+
+  private async openTaskSource(task: Task): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(task.file);
+    if (!(file instanceof TFile)) return;
+    await this.app.workspace.getLeaf("tab").openFile(file, { eState: { line: task.line } });
+  }
+
+  private async saveUiState(): Promise<void> {
+    if (this.uiSaveTimer !== null) window.clearTimeout(this.uiSaveTimer);
+    this.uiSaveTimer = window.setTimeout(() => {
+      this.uiSaveTimer = null;
+      void this.saveData(this.settings);
+    }, 500);
+  }
+
+  onunload(): void {
+    if (this.uiSaveTimer === null) return;
+    window.clearTimeout(this.uiSaveTimer);
+    this.uiSaveTimer = null;
+    void this.saveData(this.settings);
   }
 
   private async activateView(): Promise<void> {
@@ -96,12 +208,58 @@ export default class KairosPlugin extends Plugin {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_KAIROS_SIDEBAR)[0];
     if (!leaf) {
-      const rightLeaf = workspace.getRightLeaf(false);
+      const rightLeaf = workspace.getRightLeaf(true);
       if (!rightLeaf) return;
       leaf = rightLeaf;
       await leaf.setViewState({ type: VIEW_TYPE_KAIROS_SIDEBAR, active: true });
     }
     workspace.revealLeaf(leaf);
+  }
+
+  private async prepareMobileSidebar(): Promise<void> {
+    if (this.app.workspace.getLeavesOfType(VIEW_TYPE_KAIROS_SIDEBAR).length > 0) return;
+    const leaf = this.app.workspace.getRightLeaf(true);
+    if (!leaf) return;
+    await leaf.setViewState({ type: VIEW_TYPE_KAIROS_SIDEBAR, active: false });
+  }
+
+  private async ensureDailyProjection(file: TFile): Promise<void> {
+    try {
+      if (!(await this.dailyNotes.dateForPath(file.path))) return;
+      const content = await this.app.vault.read(file);
+      const updated = ensureDailyTasksBlock(content);
+      if (updated !== content) await this.app.vault.modify(file, updated);
+    } catch (error) {
+      new Notice(`Kairos: impossibile preparare la vista nella daily — ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** Migra soltanto il vecchio default storico; non tocca percorsi personalizzati. */
+  private async migrateLegacyInbox(): Promise<void> {
+    if (normalizePath(this.settings.inboxPath) !== "Inbox.md") return;
+
+    const targetPath = "_inbox/Inbox.md";
+    const legacy = this.app.vault.getAbstractFileByPath("Inbox.md");
+    const target = this.app.vault.getAbstractFileByPath(targetPath);
+
+    if (target instanceof TFile) {
+      this.settings.inboxPath = targetPath;
+      await this.saveData(this.settings);
+      return;
+    }
+    if (target) throw new Error(`Impossibile migrare l'Inbox: ${targetPath} esiste ma non è un file`);
+
+    if (legacy instanceof TFile) {
+      const folder = this.app.vault.getAbstractFileByPath("_inbox");
+      if (!folder) await this.app.vault.createFolder("_inbox");
+      else if (!(folder instanceof TFolder)) {
+        throw new Error("Impossibile migrare l'Inbox: _inbox esiste ma non è una cartella");
+      }
+      await this.app.fileManager.renameFile(legacy, targetPath);
+    }
+
+    this.settings.inboxPath = targetPath;
+    await this.saveData(this.settings);
   }
 
   async loadSettings(): Promise<void> {

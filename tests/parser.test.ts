@@ -76,6 +76,19 @@ describe("parseLine", () => {
     expect(t).toMatchObject({ text: "Voltura", priority: "high", due: "2026-07-05", tags: ["progetto/casa"] });
   });
 
+  it("estrae il link Dettagli e il block ID senza sporcare il testo", () => {
+    const t = parseLine(
+      "- [ ] Prenotare tagliando 📅 2026-08-02 [[_inbox/Dettagli/Prenotare tagliando|Dettagli]] ^kairos-a1b2",
+      "_inbox/Inbox.md",
+      4,
+    );
+    expect(t).toMatchObject({
+      text: "Prenotare tagliando",
+      detailPath: "_inbox/Dettagli/Prenotare tagliando.md",
+      blockId: "kairos-a1b2",
+    });
+  });
+
   it("accetta trattino o asterisco e rientri", () => {
     expect(parseLine("  * [ ] Task", "f.md", 0)?.text).toBe("Task");
   });
