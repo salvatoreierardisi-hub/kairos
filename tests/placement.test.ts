@@ -4,6 +4,7 @@ import { isAutomaticTaskPath, resolveAutomaticTarget } from "../src/core/placeme
 describe("isAutomaticTaskPath", () => {
   it("riconosce Inbox e file nella cartella daily", () => {
     expect(isAutomaticTaskPath("_inbox/Inbox.md", "_inbox/Inbox.md", "02 Daily")).toBe(true);
+    expect(isAutomaticTaskPath("_inbox/Inbox.md", "_inbox/Inbox", "02 Daily")).toBe(true);
     expect(isAutomaticTaskPath("02 Daily/2026-07-10.md", "_inbox/Inbox.md", "02 Daily")).toBe(true);
   });
 
@@ -19,6 +20,7 @@ describe("isAutomaticTaskPath", () => {
 describe("resolveAutomaticTarget", () => {
   it("senza data risolve Inbox", () => {
     expect(resolveAutomaticTarget(null, "_inbox/Inbox.md", null)).toBe("_inbox/Inbox.md");
+    expect(resolveAutomaticTarget(null, "_inbox/Inbox", null)).toBe("_inbox/Inbox.md");
   });
 
   it("con data usa il path daily già formattato", () => {

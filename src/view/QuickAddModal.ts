@@ -59,10 +59,11 @@ export class QuickAddModal extends Modal {
   private destinationButton: HTMLButtonElement | null = null;
   private priorityButton: HTMLButtonElement | null = null;
   private createButton: HTMLButtonElement | null = null;
+  private submitting = false;
 
   constructor(
     app: App,
-    private onSubmit: (input: NewTaskInput) => void,
+    private onSubmit: (input: NewTaskInput) => Promise<void>,
     private targetPath?: string,
   ) {
     super(app);
@@ -110,7 +111,7 @@ export class QuickAddModal extends Modal {
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        this.submit();
+        void this.submit();
       }
     });
     window.setTimeout(() => {
@@ -143,7 +144,7 @@ export class QuickAddModal extends Modal {
     spacer.setAttribute("aria-hidden", "true");
 
     this.createButton = footer.createEl("button", { cls: "kairos-quickadd-create", text: "Crea", attr: { type: "button" } });
-    this.createButton.addEventListener("click", () => this.submit());
+    this.createButton.addEventListener("click", () => void this.submit());
     this.refreshCreateButton();
   }
 
@@ -285,7 +286,7 @@ export class QuickAddModal extends Modal {
 
   private refreshCreateButton(): void {
     if (!this.createButton) return;
-    this.createButton.disabled = this.text.trim().length === 0;
+    this.createButton.disabled = this.submitting || this.text.trim().length === 0;
   }
 
   private resizeInput(input: HTMLTextAreaElement): void {
@@ -293,16 +294,23 @@ export class QuickAddModal extends Modal {
     input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
   }
 
-  private submit(): void {
-    if (this.text.trim().length === 0) return;
-    this.onSubmit({
-      text: this.text.trim(),
-      due: this.due,
-      priority: this.priority,
-      important: false,
-      targetPath: this.targetPath,
-    });
-    this.close();
+  private async submit(): Promise<void> {
+    if (this.submitting || this.text.trim().length === 0) return;
+    this.submitting = true;
+    this.refreshCreateButton();
+    try {
+      await this.onSubmit({
+        text: this.text.trim(),
+        due: this.due,
+        priority: this.priority,
+        important: false,
+        targetPath: this.targetPath,
+      });
+      this.close();
+    } catch {
+      this.submitting = false;
+      this.refreshCreateButton();
+    }
   }
 
   onClose(): void {

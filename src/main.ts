@@ -75,6 +75,7 @@ export default class KairosPlugin extends Plugin {
           await this.writer.addTask(input);
         } catch (err) {
           new Notice("Kairos: impossibile salvare il task — " + (err instanceof Error ? err.message : String(err)));
+          throw err;
         }
       },
       targetPath,

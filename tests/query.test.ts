@@ -87,6 +87,19 @@ describe("groupTasks", () => {
     expect(g.map((x) => x.label)).toEqual(["Inbox", "docly", "kairos"]);
   });
 
+  it("riconosce Inbox senza estensione nel raggruppamento per nota", () => {
+    const g = groupTasks(
+      [mk({ file: "_inbox/Inbox.md" })],
+      filter({ due: "all" }),
+      "note",
+      "note",
+      TODAY,
+      { inboxPath: "_inbox/Inbox" },
+    );
+    expect(g[0]?.key).toBe("0-inbox");
+    expect(g[0]?.label).toBe("Inbox");
+  });
+
   it("gruppo 'date' produce i bucket ordinati", () => {
     const g = groupTasks(
       [mk({ due: "2026-07-01" }), mk({ due: TODAY }), mk({ due: "2026-07-20" }), mk({ due: null })],

@@ -98,8 +98,12 @@ function parentFolder(path: string): string {
 }
 
 function isInboxPath(path: string, inboxPath: string): boolean {
-  const prefix = inboxPath.replace(/\/+$/, "");
-  return prefix !== "" && (path === prefix || path.startsWith(`${prefix}/`));
+  const clean = (value: string) => value.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const configured = clean(inboxPath);
+  const normalizedInbox = configured === "" || configured.toLowerCase().endsWith(".md")
+    ? configured
+    : `${configured}.md`;
+  return normalizedInbox !== "" && clean(path) === normalizedInbox;
 }
 
 function groupSpec(task: Task, group: GroupKey, today: string, opts: QueryOptions): GroupSpec {

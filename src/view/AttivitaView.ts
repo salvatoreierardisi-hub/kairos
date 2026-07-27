@@ -116,7 +116,7 @@ export class AttivitaView extends ItemView {
     );
     if (exact) return exact;
     const sameSource = sameFile.filter((task) => task.source === this.selectedTask?.source);
-    return sameSource.length === 1 ? sameSource[0] : this.selectedTask;
+    return sameSource.length === 1 ? sameSource[0] : null;
   }
 
   private renderInspector(): void {

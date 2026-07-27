@@ -12,6 +12,7 @@ import {
 } from "../core/query";
 import { formatDueBadgeLabel } from "../core/dateLabel";
 import { sortTasks, SortKey } from "../core/sorting";
+import { reconcileTaskSelection } from "../core/selection";
 import { PRIORITY_EMOJI } from "../core/parser";
 import { Task, Settings, TaskStatus, Priority, TaskPanelState, SavedView } from "../types";
 import { pickNote } from "./NotePicker";
@@ -158,7 +159,7 @@ export class TaskPanel {
 
   // Cursore tastiera + selezione multipla sulle righe attualmente visibili.
   private cursor = -1;
-  private readonly selection = new Set<string>();
+  private readonly selection = new Map<string, Task>();
   private visibleTasks: Task[] = [];
   private rowEls: HTMLElement[] = [];
   private taskByKey = new Map<string, Task>();
@@ -538,6 +539,7 @@ export class TaskPanel {
     this.lastGroupKeys = groups.filter((group) => group.label !== "").map((group) => group.key);
     this.taskByKey = new Map();
     for (const group of groups) for (const task of group.tasks) this.taskByKey.set(taskKey(task), task);
+    this.reconcileSelection();
 
     const total = groups.reduce((sum, group) => sum + group.tasks.length, 0);
     if (total === 0) {
@@ -617,7 +619,16 @@ export class TaskPanel {
   }
 
   private pruneSelection(): void {
-    for (const key of [...this.selection]) if (!this.taskByKey.has(key)) this.selection.delete(key);
+    this.reconcileSelection();
+  }
+
+  private reconcileSelection(): void {
+    const selected = reconcileTaskSelection(
+      [...this.selection.values()],
+      [...this.taskByKey.values()],
+    );
+    this.selection.clear();
+    for (const task of selected) this.selection.set(taskKey(task), task);
   }
 
   private renderRows(
@@ -684,6 +695,7 @@ export class TaskPanel {
     this.lastGroupKeys = ["focus-overdue", "focus-today", "focus-attention"];
     this.taskByKey = new Map();
     for (const task of [...overdue, ...dueToday, ...attention]) this.taskByKey.set(taskKey(task), task);
+    this.reconcileSelection();
 
     this.renderFocusSection(results, "focus-overdue", "In ritardo", overdue, today);
     this.renderFocusSection(results, "focus-today", "Oggi", dueToday, today);
@@ -994,7 +1006,7 @@ export class TaskPanel {
   private toggleSelect(task: Task): void {
     const key = taskKey(task);
     if (this.selection.has(key)) this.selection.delete(key);
-    else this.selection.add(key);
+    else this.selection.set(key, task);
     const index = this.visibleTasks.findIndex((candidate) => taskKey(candidate) === key);
     if (index >= 0) this.rowEls[index]?.toggleClass("is-selected", this.selection.has(key));
     this.renderBulkBar();
@@ -1011,7 +1023,7 @@ export class TaskPanel {
     for (let i = lo; i <= hi; i++) {
       const task = this.visibleTasks[i];
       if (!task) continue;
-      this.selection.add(taskKey(task));
+      this.selection.set(taskKey(task), task);
       this.rowEls[i]?.addClass("is-selected");
     }
     this.cursor = toIndex;
@@ -1027,7 +1039,7 @@ export class TaskPanel {
   /** Bersagli dell'azione in blocco: la selezione, altrimenti la riga sotto il cursore. */
   private targets(): Task[] {
     if (this.selection.size > 0) {
-      return [...this.selection].map((key) => this.taskByKey.get(key)).filter((t): t is Task => !!t);
+      return [...this.selection.values()];
     }
     const task = this.cursorTask();
     return task ? [task] : [];
