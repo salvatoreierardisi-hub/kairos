@@ -821,6 +821,98 @@
   margin: var(--size-4-2) 0;
 }
 
+.kairos-daily-projection--duplicate {
+  display: none !important;
+}
+
+.kairos-daily-header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  min-height: 42px;
+}
+
+.kairos-daily-header__toggle,
+.kairos-daily-header__add {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-family: inherit;
+  box-shadow: none;
+}
+
+.kairos-daily-header__toggle {
+  gap: var(--size-2-1);
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kairos-daily-header__chevron {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.kairos-daily-header__chevron .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.kairos-daily-header__add {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.kairos-daily-header__add-symbol {
+  display: block;
+  color: currentColor;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 1;
+  -webkit-text-fill-color: currentColor;
+}
+
+.kairos-daily-header__toggle:hover,
+.kairos-daily-header__add:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-border);
+}
+
+.is-mobile .kairos-daily-header__toggle {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.is-mobile .kairos-daily-header__add {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.kairos-daily-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
 /* In Live Preview il controllo nativo "Modifica blocco" copre l'azione del
    primo task. Il blocco Kairos è gestito dal plugin, quindi lo nascondiamo
    soltanto quando contiene la proiezione interattiva. */
@@ -862,26 +954,78 @@
   color: var(--text-muted);
 }
 
+.kairos-daily-complete-icon,
+.kairos-daily-source-icon {
+  box-sizing: border-box;
+  display: block;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: currentColor;
+  opacity: 1;
+  -webkit-text-fill-color: currentColor;
+}
+
+.kairos-daily-complete-icon {
+  position: relative;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.kairos-daily-complete-icon.is-in-progress::after {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.kairos-daily-source-icon {
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3Cpath d='m10 18 3-3-3-3'/%3E%3Cpath d='M4 15h9'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3Cpath d='m10 18 3-3-3-3'/%3E%3Cpath d='M4 15h9'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
 .kairos-daily-task__body {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  height: auto;
+  min-height: 38px;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center;
   padding: var(--size-2-1) calc(var(--size-2-2) + 8px);
   color: var(--text-normal);
+  font-size: 15px;
+  line-height: 1.3;
   text-align: left;
+  white-space: normal;
 }
 
 .kairos-daily-task__text {
   width: 100%;
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .kairos-daily-task__source,
 .kairos-daily-empty {
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  font-size: 13px;
+}
+
+.is-mobile .kairos-daily-task__body {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.is-mobile .kairos-daily-task__source,
+.is-mobile .kairos-daily-empty {
+  font-size: 13px;
 }
 
 .kairos-daily-open:hover,
@@ -907,8 +1051,20 @@
   backdrop-filter: blur(18px);
 }
 
-.modal.kairos-quickadd-modal .modal-close-button {
-  display: none;
+.modal.kairos-quickadd-modal > .modal-close-button {
+  top: 16px;
+  inset-inline-end: 16px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-modifier-hover) 85%, transparent);
+  color: var(--text-normal);
+}
+
+.modal.kairos-quickadd-modal > .modal-close-button:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-border);
 }
 
 .modal.kairos-quickadd-modal .modal-content {
@@ -933,8 +1089,9 @@
 .kairos-quickadd-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
+  padding-inline-end: 46px;
 }
 
 .kairos-quickadd-dest {
@@ -980,42 +1137,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.kairos-quickadd-close {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-modifier-hover) 85%, transparent);
-  color: var(--text-normal);
-  box-shadow: none;
-  cursor: var(--cursor);
-}
-
-.kairos-quickadd-close:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-border);
-}
-
-.kairos-quickadd-close .svg-icon {
-  display: none;
-  width: 17px;
-  height: 17px;
-  stroke-width: 2.6;
-}
-
-.kairos-quickadd-close__fallback {
-  display: block;
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1;
-  transform: translateY(-1px);
 }
 
 .kairos-quickadd-inputwrap {
@@ -1259,7 +1380,9 @@
     height: 18px;
   }
 
-  .kairos-quickadd-close {
+  .modal.kairos-quickadd-modal > .modal-close-button {
+    top: 12px;
+    inset-inline-end: 12px;
     width: 36px;
     height: 36px;
     background: var(--background-modifier-hover);
@@ -1425,7 +1548,9 @@
   height: 17px;
 }
 
-.is-mobile .kairos-quickadd-close {
+.is-mobile .modal.kairos-quickadd-modal > .modal-close-button {
+  top: 10px;
+  inset-inline-end: 12px;
   width: 34px;
   height: 34px;
   background: var(--background-modifier-hover);

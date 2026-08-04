@@ -55,13 +55,35 @@ describe("createInboxContent", () => {
 });
 
 describe("ensureDailyTasksBlock", () => {
-  it("aggiunge la proiezione dopo il titolo della daily", () => {
+  it("aggiunge la proiezione autonoma dopo il titolo della daily", () => {
     expect(ensureDailyTasksBlock("# 27 luglio\n\nNote\n"))
-      .toBe("# 27 luglio\n\n## Task\n```kairos-tasks\n```\n\nNote\n");
+      .toBe("# 27 luglio\n\n```kairos-tasks\n```\n\nNote\n");
   });
 
   it("non duplica un blocco esistente", () => {
-    const content = "# Giorno\n\n## Task\n```kairos-tasks\n```\n";
+    const content = "# Giorno\n\n```kairos-tasks\n```\n";
     expect(ensureDailyTasksBlock(content)).toBe(content);
+  });
+
+  it("migra il vecchio titolo Task quando è adiacente al blocco", () => {
+    const content = "# Giorno\n\n## Task\n```kairos-tasks\n```\n\nAppunti liberi\n";
+    expect(ensureDailyTasksBlock(content))
+      .toBe("# Giorno\n\n```kairos-tasks\n```\n\nAppunti liberi\n");
+  });
+
+  it("sostituisce il titolo Task di un template che non contiene ancora il blocco", () => {
+    const content = "# Giorno\n\n## Task\n\nAppunti liberi\n";
+    expect(ensureDailyTasksBlock(content))
+      .toBe("# Giorno\n\n```kairos-tasks\n```\n\nAppunti liberi\n");
+  });
+
+  it("non rimuove un titolo Task non adiacente al blocco", () => {
+    const content = "# Giorno\n\n## Task\nTesto manuale\n\n```kairos-tasks\n```\n";
+    expect(ensureDailyTasksBlock(content)).toBe(content);
+  });
+
+  it("preserva CRLF nella proiezione autonoma", () => {
+    expect(ensureDailyTasksBlock("# Giorno\r\n\r\nNote\r\n"))
+      .toBe("# Giorno\r\n\r\n```kairos-tasks\r\n```\r\n\r\nNote\r\n");
   });
 });

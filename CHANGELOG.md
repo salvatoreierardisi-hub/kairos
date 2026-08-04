@@ -2,6 +2,26 @@
 
 All notable changes to Kairos are documented in this file.
 
+## [0.2.2] — 2026-08-04
+
+### Added
+
+- Daily-note projections now have a self-contained, collapsible Task header with a
+  quick-add button that preselects the daily date while keeping the task in Inbox.
+- Existing daily projections migrate away from the Markdown `## Task` heading, so
+  collapsing the task list no longer hides notes written below it.
+
+### Fixed
+
+- Long task text now wraps correctly on mobile and expands the full task row instead of
+  overflowing into adjacent rows.
+- The task editor now uses only Obsidian's native close control, removing the duplicate
+  close icon on desktop and mobile.
+- Duplicate Live Preview renderers of the same daily projection are deduplicated within
+  each Obsidian leaf.
+- Daily controls now keep the compact desktop appearance on iOS. Completion and
+  source-note icons use CSS rendering independent of Obsidian's mobile SVG behavior.
+
 ## [0.2.1] — 2026-07-27
 
 ### Fixed
@@ -61,6 +81,7 @@ All notable changes to Kairos are documented in this file.
 - Search, filters, sorting, grouping, saved views, multiselect, and bulk actions.
 - Configurable Inbox, Daily Notes integration, priorities, dates, tags, and task status.
 
+[0.2.2]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/salvatoreierardisi-hub/kairos/releases/tag/v0.1.0

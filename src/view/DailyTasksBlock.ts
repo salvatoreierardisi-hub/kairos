@@ -6,6 +6,7 @@ import { sortTasks } from "../core/sorting";
 
 export class DailyTasksBlock extends MarkdownRenderChild {
   private unsubscribe: (() => void) | null = null;
+  private collapsed = false;
 
   constructor(
     containerEl: HTMLElement,
@@ -14,6 +15,8 @@ export class DailyTasksBlock extends MarkdownRenderChild {
     private index: TaskIndex,
     private writer: TaskWriter,
     private onEditTask: (task: Task) => void,
+    private onAddTask: (date: string) => void,
+    private releaseProjection: () => void,
   ) {
     super(containerEl);
   }
@@ -27,6 +30,7 @@ export class DailyTasksBlock extends MarkdownRenderChild {
   onunload(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.releaseProjection();
   }
 
   private tasks(): Task[] {
@@ -42,19 +46,46 @@ export class DailyTasksBlock extends MarkdownRenderChild {
 
   private render(): void {
     this.containerEl.empty();
+    const header = this.containerEl.createDiv({ cls: "kairos-daily-header" });
+    const toggle = header.createEl("button", {
+      cls: "kairos-daily-header__toggle",
+      attr: { type: "button", "aria-expanded": String(!this.collapsed) },
+    });
+    setIcon(toggle.createSpan({ cls: "kairos-daily-header__chevron" }), this.collapsed ? "chevron-right" : "chevron-down");
+    toggle.createSpan({ cls: "kairos-daily-header__title", text: "Task" });
+    toggle.setAttribute("aria-label", this.collapsed ? "Espandi task" : "Comprimi task");
+    toggle.addEventListener("click", () => {
+      this.collapsed = !this.collapsed;
+      this.render();
+    });
+
+    const add = header.createEl("button", {
+      cls: "kairos-daily-header__add",
+      attr: { type: "button", "aria-label": "Aggiungi task per questa data" },
+    });
+    add.createSpan({ cls: "kairos-daily-header__add-symbol", text: "+" });
+    add.addEventListener("click", () => this.onAddTask(this.date));
+
+    if (this.collapsed) return;
+
+    const list = this.containerEl.createDiv({ cls: "kairos-daily-list" });
     const tasks = this.tasks();
     if (tasks.length === 0) {
-      this.containerEl.createDiv({ cls: "kairos-daily-empty", text: "Nessun task per questa data." });
+      list.createDiv({ cls: "kairos-daily-empty", text: "Nessun task per questa data." });
       return;
     }
 
     for (const task of tasks) {
-      const row = this.containerEl.createDiv({ cls: "kairos-daily-task" });
+      const row = list.createDiv({ cls: "kairos-daily-task" });
       const check = row.createEl("button", {
         cls: "kairos-daily-check",
         attr: { "aria-label": "Completa task", type: "button" },
       });
-      setIcon(check, task.status === "inProgress" ? "circle-dot" : "circle");
+      check.createSpan({
+        cls: task.status === "inProgress"
+          ? "kairos-daily-complete-icon is-in-progress"
+          : "kairos-daily-complete-icon",
+      });
       check.addEventListener("click", (event) => {
         event.stopPropagation();
         void this.writer.toggleTask(task).catch((error) =>
@@ -74,7 +105,7 @@ export class DailyTasksBlock extends MarkdownRenderChild {
         cls: "kairos-daily-open",
         attr: { "aria-label": "Apri nota sorgente", type: "button" },
       });
-      setIcon(open, "file-symlink");
+      open.createSpan({ cls: "kairos-daily-source-icon" });
       open.addEventListener("click", () => void this.openSource(task));
     }
   }

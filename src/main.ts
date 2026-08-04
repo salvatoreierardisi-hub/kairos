@@ -1,4 +1,13 @@
-import { normalizePath, Notice, Platform, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import {
+  MarkdownPostProcessorContext,
+  normalizePath,
+  Notice,
+  Platform,
+  Plugin,
+  TFile,
+  TFolder,
+  WorkspaceLeaf,
+} from "obsidian";
 import { Settings, DEFAULT_SETTINGS, Task } from "./types";
 import { TaskIndex } from "./index/TaskIndex";
 import { TaskWriter } from "./io/TaskWriter";
@@ -36,7 +45,19 @@ export default class KairosPlugin extends Plugin {
         el.createDiv({ cls: "kairos-daily-empty", text: "Questa vista Kairos funziona dentro una daily configurata." });
         return;
       }
-      ctx.addChild(new DailyTasksBlock(el, this.app, date, this.index, this.writer, (task) => this.openTaskEditor(task)));
+      const releaseProjection = this.claimDailyProjection(el, ctx);
+      ctx.addChild(
+        new DailyTasksBlock(
+          el,
+          this.app,
+          date,
+          this.index,
+          this.writer,
+          (task) => this.openTaskEditor(task),
+          (taskDate) => this.openQuickAdd(undefined, taskDate),
+          releaseProjection,
+        ),
+      );
     });
 
     this.registerView(
@@ -113,7 +134,7 @@ export default class KairosPlugin extends Plugin {
     });
   }
 
-  private openQuickAdd(targetPath?: string): void {
+  private openQuickAdd(targetPath?: string, initialDue?: string): void {
     new QuickAddModal(
       this.app,
       async (input) => {
@@ -148,7 +169,44 @@ export default class KairosPlugin extends Plugin {
         }
       },
       targetPath,
+      undefined,
+      undefined,
+      initialDue,
     ).open();
+  }
+
+  private claimDailyProjection(el: HTMLElement, ctx: MarkdownPostProcessorContext): () => void {
+    const line = ctx.getSectionInfo(el)?.lineStart ?? "daily";
+    const key = `${ctx.sourcePath}:${line}`;
+    const viewRoot = el.closest<HTMLElement>(".workspace-leaf-content") ?? el.ownerDocument.body;
+    const host = el.closest<HTMLElement>(".cm-embed-block") ?? el;
+    const previousHosts = new Set<HTMLElement>();
+
+    for (const candidate of Array.from(
+      viewRoot.querySelectorAll<HTMLElement>("[data-kairos-daily-projection]"),
+    )) {
+      if (candidate.dataset.kairosDailyProjection === key && candidate !== host) previousHosts.add(candidate);
+    }
+    for (const block of Array.from(viewRoot.querySelectorAll<HTMLElement>(".kairos-daily-block"))) {
+      const candidate = (block.closest(".cm-embed-block") as HTMLElement | null) ?? block;
+      if (candidate !== host) previousHosts.add(candidate);
+    }
+
+    for (const previous of previousHosts) {
+      previous.dataset.kairosDailyProjection = key;
+      previous.addClass("kairos-daily-projection--duplicate");
+    }
+    host.dataset.kairosDailyProjection = key;
+    host.removeClass("kairos-daily-projection--duplicate");
+
+    return () => {
+      delete host.dataset.kairosDailyProjection;
+      host.removeClass("kairos-daily-projection--duplicate");
+      const remaining = Array.from(
+        viewRoot.querySelectorAll<HTMLElement>("[data-kairos-daily-projection]"),
+      ).filter((candidate) => candidate.dataset.kairosDailyProjection === key && candidate.isConnected);
+      remaining[remaining.length - 1]?.removeClass("kairos-daily-projection--duplicate");
+    };
   }
 
   private openTaskEditor(task: Task): void {

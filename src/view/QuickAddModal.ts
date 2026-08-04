@@ -67,6 +67,7 @@ function priorityLabel(priority: Priority | null): string {
 }
 
 export class QuickAddModal extends Modal {
+  private static active: QuickAddModal | null = null;
   private text = "";
   private due: string | null = null;
   private priority: Priority | null = null;
@@ -86,6 +87,7 @@ export class QuickAddModal extends Modal {
     private targetPath?: string,
     private task?: Task,
     private onOpenSource?: (task: Task) => void,
+    initialDue?: string,
   ) {
     super(app);
     if (task) {
@@ -94,10 +96,16 @@ export class QuickAddModal extends Modal {
       this.priority = task.priority;
       this.status = task.status;
       this.targetPath = task.file;
+    } else if (initialDue) {
+      this.due = initialDue;
     }
   }
 
   onOpen(): void {
+    if (QuickAddModal.active && QuickAddModal.active !== this) {
+      QuickAddModal.active.close();
+    }
+    QuickAddModal.active = this;
     this.modalEl.addClass("kairos-quickadd-modal");
     const { contentEl } = this;
     contentEl.empty();
@@ -123,12 +131,6 @@ export class QuickAddModal extends Modal {
       this.openDestinationMenu(event);
     });
     this.renderDestinationButton();
-
-    const close = top.createEl("button", { cls: "kairos-quickadd-close", attr: { type: "button" } });
-    setIcon(close, "x");
-    close.createSpan({ cls: "kairos-quickadd-close__fallback", text: "×" });
-    close.setAttribute("aria-label", "Chiudi");
-    close.addEventListener("click", () => this.close());
   }
 
   private renderInput(parent: HTMLElement): void {
@@ -440,6 +442,7 @@ export class QuickAddModal extends Modal {
   }
 
   onClose(): void {
+    if (QuickAddModal.active === this) QuickAddModal.active = null;
     this.contentEl.empty();
     this.modalEl.removeClass("kairos-quickadd-modal");
   }

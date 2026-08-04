@@ -35,8 +35,36 @@ export function createInboxContent(line: string): string {
 
 export const DAILY_TASKS_BLOCK = "```kairos-tasks\n```";
 
-/** Inserisce una sola proiezione Kairos nella sezione Task della daily. */
+function insertStandaloneDailyBlock(content: string): string {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const block = DAILY_TASKS_BLOCK.split("\n").join(eol);
+  const fmMatch = content.match(FRONTMATTER_RE);
+  const bodyStart = fmMatch?.[0].length ?? 0;
+  const body = content.slice(bodyStart);
+  const h1 = body.match(/^#(?!#)[ \t]+.*(?:\r?\n|$)/m);
+  const insertAt = h1?.index !== undefined ? bodyStart + h1.index + h1[0].length : bodyStart;
+  const before = content.slice(0, insertAt);
+  const after = content.slice(insertAt).replace(/^(?:\r?\n)+/, "");
+  const beforeSep = before.length > 0 && !before.endsWith(`${eol}${eol}`) ? eol : "";
+  const afterSep = after.length > 0 ? `${eol}${eol}` : eol;
+  return `${before}${beforeSep}${block}${afterSep}${after}`;
+}
+
+/** Inserisce una sola proiezione Kairos autonoma e migra il vecchio titolo adiacente. */
 export function ensureDailyTasksBlock(content: string): string {
-  if (/^```kairos-tasks(?:\s.*)?$/m.test(content)) return content;
-  return insertTaskAtTop(content, DAILY_TASKS_BLOCK);
+  const block = content.match(/^```kairos-tasks[ \t]*(?:\r?\n|$)/m);
+  if (block?.index === undefined) {
+    const heading = content.match(/^## Task[ \t]*(?:\r?\n|$)/m);
+    if (heading?.index === undefined) return insertStandaloneDailyBlock(content);
+
+    const eol = content.includes("\r\n") ? "\r\n" : "\n";
+    const standaloneBlock = DAILY_TASKS_BLOCK.split("\n").join(eol);
+    const after = content.slice(heading.index + heading[0].length).replace(/^(?:\r?\n)+/, "");
+    const afterSep = after.length > 0 ? `${eol}${eol}` : eol;
+    return `${content.slice(0, heading.index)}${standaloneBlock}${afterSep}${after}`;
+  }
+
+  const before = content.slice(0, block.index);
+  const migrated = before.replace(/(^|\r?\n)## Task[ \t]*\r?\n$/, "$1");
+  return migrated === before ? content : `${migrated}${content.slice(block.index)}`;
 }
