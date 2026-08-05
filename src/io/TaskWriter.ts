@@ -4,8 +4,10 @@ import { formatTaskLine } from "../core/format";
 import { createInboxContent, insertTaskAtTop } from "../core/dailyInsert";
 import { locateTaskLine, locateTaskLines } from "../core/taskLine";
 import { setStatusLine, toggleLine } from "../core/toggleLine";
-import { addTagLine, setDueLine, setPriorityLine, setTaskTextLine } from "../core/updateLine";
+import { addTagLine, setDueLine, setPriorityLine, setScheduledLine, setTaskTextLine } from "../core/updateLine";
 import { detailFolder, detailNoteContent, detailTitle } from "../core/taskDetail";
+import { completeRecurring } from "../core/recurrence";
+import { isValidDay } from "../core/dates";
 
 function markdownPath(path: string): string {
   const normalized = normalizePath(path);
@@ -25,6 +27,9 @@ export class TaskWriter {
   ) {}
 
   async addTask(input: NewTaskInput): Promise<CreatedTask> {
+    if (input.text.trim() === "") throw new Error("Il testo del task è vuoto");
+    this.assertDate(input.due);
+    this.assertDate(input.scheduled ?? null);
     const line = formatTaskLine(input);
     if (input.targetPath) {
       return await this.insertInNote(markdownPath(input.targetPath), line);
@@ -57,15 +62,42 @@ export class TaskWriter {
   }
 
   async toggleTask(task: Task): Promise<void> {
+    if (task.status !== "done" && task.source.includes("🔁")) {
+      await this.completeRecurringTask(task);
+      return;
+    }
     await this.updateTaskLine(task, (line) => toggleLine(line, task.status, this.todayString()));
   }
 
   async setStatus(task: Task, status: TaskStatus): Promise<void> {
+    if (status === "done" && task.status !== "done" && task.source.includes("🔁")) {
+      await this.completeRecurringTask(task);
+      return;
+    }
     await this.updateTaskLine(task, (line) => setStatusLine(line, status, this.todayString()));
   }
 
   async setDue(task: Task, due: string | null): Promise<void> {
+    this.assertDate(due);
     await this.updateTaskLine(task, (line) => setDueLine(line, due));
+  }
+
+  async setDueWithUndo(task: Task, due: string | null): Promise<() => Promise<void>> {
+    this.assertDate(due);
+    const file = this.app.vault.getAbstractFileByPath(task.file);
+    if (!(file instanceof TFile)) throw new Error(`Nota sorgente non trovata: ${task.file}`);
+    const lines = (await this.app.vault.read(file)).split("\n");
+    const index = locateTaskLine(lines, task.line, task.source);
+    const nextSource = setDueLine(lines[index], due);
+    lines[index] = nextSource;
+    await this.app.vault.modify(file, lines.join("\n"));
+    const nextRef: Task = { ...task, line: index, source: nextSource, due };
+    return async () => this.setDue(nextRef, task.due);
+  }
+
+  async setScheduled(task: Task, scheduled: string | null): Promise<void> {
+    this.assertDate(scheduled);
+    await this.updateTaskLine(task, (line) => setScheduledLine(line, scheduled));
   }
 
   async addTag(task: Task, tag: string): Promise<void> {
@@ -78,13 +110,17 @@ export class TaskWriter {
 
   async updateTask(
     task: Task,
-    update: { text: string; due: string | null; priority: Priority | null; status: TaskStatus },
+    update: { text: string; due: string | null; scheduled?: string | null; priority: Priority | null; status: TaskStatus },
   ): Promise<void> {
+    if (update.text.trim() === "") throw new Error("Il testo del task è vuoto");
+    this.assertDate(update.due);
+    this.assertDate(update.scheduled ?? null);
+    if (update.status === "done" && task.status !== "done" && task.source.includes("🔁")) {
+      await this.completeRecurringTask(task, (line) => this.applyTaskEdits(line, task, update, task.status));
+      return;
+    }
     await this.updateTaskLine(task, (line) => {
-      let next = setTaskTextLine(line, update.text);
-      next = setDueLine(next, update.due);
-      next = setPriorityLine(next, update.priority);
-      return setStatusLine(next, update.status, this.todayString());
+      return this.applyTaskEdits(line, task, update, update.status);
     });
   }
 
@@ -133,6 +169,33 @@ export class TaskWriter {
     const lines = (await this.app.vault.read(file)).split("\n");
     const index = locateTaskLine(lines, task.line, task.source);
     lines[index] = update(lines[index]);
+    await this.app.vault.modify(file, lines.join("\n"));
+  }
+
+  private applyTaskEdits(
+    line: string,
+    task: Task,
+    update: { text: string; due: string | null; scheduled?: string | null; priority: Priority | null },
+    status: TaskStatus,
+  ): string {
+    let next = setTaskTextLine(line, update.text);
+    next = setDueLine(next, update.due);
+    next = setScheduledLine(next, update.scheduled === undefined ? task.scheduled : update.scheduled);
+    next = setPriorityLine(next, update.priority);
+    return setStatusLine(next, status, this.todayString());
+  }
+
+  private async completeRecurringTask(task: Task, edit: (line: string) => string = (line) => line): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(task.file);
+    if (!(file instanceof TFile)) throw new Error(`Nota sorgente non trovata: ${task.file}`);
+    const lines = (await this.app.vault.read(file)).split("\n");
+    const index = locateTaskLine(lines, task.line, task.source);
+    const result = completeRecurring(edit(lines[index]), this.todayString());
+    if (!result) {
+      await this.app.workspace.getLeaf("tab").openFile(file, { eState: { line: index } });
+      throw new Error("Ricorrenza non supportata o priva di data: nessuna modifica effettuata");
+    }
+    lines.splice(index, 1, result.nextLine, result.completedLine);
     await this.app.vault.modify(file, lines.join("\n"));
   }
 
@@ -206,5 +269,9 @@ export class TaskWriter {
     const d = new Date();
     const p = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  private assertDate(date: string | null): void {
+    if (date !== null && !isValidDay(date)) throw new Error(`Data non valida: ${date}`);
   }
 }

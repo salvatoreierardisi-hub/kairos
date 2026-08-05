@@ -1,8 +1,9 @@
 import { Task, TaskStatus, Priority } from "../types";
 import { SortKey, sortTasks, priorityRank } from "./sorting";
+import { addDays, effectiveDate } from "./dates";
 
 export type DueSegment = "today" | "upcoming" | "none" | "all";
-export type GroupKey = "note" | "date" | "priority" | "tag" | "folder" | "none";
+export type GroupKey = "note" | "date" | "agenda" | "priority" | "tag" | "folder" | "none";
 
 export interface TaskFilter {
   text: string;
@@ -33,21 +34,20 @@ export interface TaskGroup {
 
 export interface QueryOptions {
   inboxPath?: string;
+  agendaHorizonDays?: number;
 }
 
-function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+function searchable(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
 function matchesDue(task: Task, due: DueSegment, today: string): boolean {
+  const date = effectiveDate(task);
   switch (due) {
     case "all": return true;
-    case "none": return task.due === null;
-    case "today": return task.due !== null && task.due <= today;
-    case "upcoming": return task.due !== null && task.due > today;
+    case "none": return date === null;
+    case "today": return date !== null && date <= today;
+    case "upcoming": return date !== null && date > today;
   }
 }
 
@@ -58,7 +58,7 @@ function matchesTag(taskTags: string[], wanted: string): boolean {
 export function matchesTask(task: Task, filter: TaskFilter, today: string): boolean {
   if (filter.statuses.length > 0 && !filter.statuses.includes(task.status)) return false;
   if (filter.exactDay !== null) {
-    if (task.due !== filter.exactDay) return false;
+    if (effectiveDate(task) !== filter.exactDay) return false;
   } else if (!matchesDue(task, filter.due, today)) {
     return false;
   }
@@ -70,10 +70,16 @@ export function matchesTask(task: Task, filter: TaskFilter, today: string): bool
   if (filter.priorities !== null && (task.priority === null || !filter.priorities.includes(task.priority))) {
     return false;
   }
-  const q = filter.text.trim().toLowerCase();
+  const q = searchable(filter.text.trim());
   if (q === "") return true;
-  const haystack = `${task.text} ${task.file} ${task.tags.join(" ")}`.toLowerCase();
+  const haystack = searchable(`${task.text} ${task.detailPath ?? ""} ${task.file} ${task.tags.join(" ")}`);
   return q.split(/\s+/).filter(Boolean).every((term) => haystack.includes(term));
+}
+
+export function tasksForDay(tasks: readonly Task[], day: string): Task[] {
+  return tasks.filter((task) =>
+    effectiveDate(task) === day && (task.status === "open" || task.status === "inProgress"),
+  );
 }
 
 /** Etichette italiane per la priorità, riusate anche in view/AttivitaView.ts. */
@@ -115,11 +121,24 @@ function groupSpec(task: Task, group: GroupKey, today: string, opts: QueryOption
         ? { key: "0-inbox", label: "Inbox" }
         : { key: `1-${task.file}`, label: noteName(task.file) };
     case "date": {
-      if (task.due === null) return { key: "zz-none", label: "Senza data" };
-      if (task.due < today) return { key: "a-overdue", label: "In ritardo" };
-      if (task.due === today) return { key: "b-today", label: "Oggi" };
-      if (task.due <= addDays(today, 7)) return { key: "c-week", label: "Prossimi 7 giorni" };
+      const date = effectiveDate(task);
+      if (date === null) return { key: "zz-none", label: "Senza data" };
+      if (date < today) return { key: "a-overdue", label: "In ritardo" };
+      if (date === today) return { key: "b-today", label: "Oggi" };
+      if (date <= addDays(today, 7)) return { key: "c-week", label: "Prossimi 7 giorni" };
       return { key: "d-later", label: "Dopo" };
+    }
+    case "agenda": {
+      const date = effectiveDate(task);
+      if (date === null) return { key: "zz-none", label: "Senza data" };
+      if (date < today) return { key: "00-overdue", label: "In ritardo" };
+      const horizon = Math.max(1, Math.min(365, opts.agendaHorizonDays ?? 14));
+      if (date > addDays(today, horizon)) return { key: "zy-later", label: "Dopo" };
+      const [year, month, day] = date.split("-").map(Number);
+      const weekday = new Intl.DateTimeFormat("it-IT", { weekday: "long" })
+        .format(new Date(year, month - 1, day));
+      const label = date === today ? "Oggi" : weekday.charAt(0).toUpperCase() + weekday.slice(1);
+      return { key: `10-${date}`, label, sublabel: date };
     }
     case "priority":
       return task.priority === null

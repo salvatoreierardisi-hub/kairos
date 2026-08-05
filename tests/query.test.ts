@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { matchesTask, groupTasks, DEFAULT_FILTER, TaskFilter } from "../src/core/query";
+import { matchesTask, groupTasks, DEFAULT_FILTER, TaskFilter, tasksForDay } from "../src/core/query";
 import { Task, Priority } from "../src/types";
 
 function mk(p: Partial<Task>): Task {
   return {
-    text: "t", status: "open", due: null, completed: null, priority: null,
+    text: "t", status: "open", due: null, scheduled: null, completed: null, cancelled: null, priority: null,
     tags: [], file: "n.md", line: 0, source: "- [ ] t", ...p,
   };
 }
@@ -47,6 +47,16 @@ describe("matchesTask", () => {
     expect(matchesTask(mk({ due: "2026-07-09" }), f, TODAY)).toBe(true);
     expect(matchesTask(mk({ due: "2026-07-10" }), f, TODAY)).toBe(false);
     expect(matchesTask(mk({ due: null }), f, TODAY)).toBe(false);
+  });
+
+  it("ricerca senza distinzione di accenti e include il titolo Dettagli", () => {
+    expect(matchesTask(mk({ text: "Qualità città" }), filter({ text: "qualita citta" }), TODAY)).toBe(true);
+    expect(matchesTask(mk({ detailPath: "Dettagli/Revisione qualità.md" }), filter({ text: "revisione qualita" }), TODAY)).toBe(true);
+  });
+
+  it("usa due prima di scheduled come data effettiva", () => {
+    expect(matchesTask(mk({ due: null, scheduled: TODAY }), filter({ exactDay: TODAY }), TODAY)).toBe(true);
+    expect(matchesTask(mk({ due: "2026-07-10", scheduled: TODAY }), filter({ exactDay: TODAY }), TODAY)).toBe(false);
   });
 
   it("tag gerarchico: 'progetto' matcha 'progetto/casa'", () => {
@@ -120,5 +130,22 @@ describe("groupTasks", () => {
     const g = groupTasks(tasks, filter({ due: "all" }), "note", "none", TODAY);
     expect(g).toHaveLength(1);
     expect(g[0].label).toBe("");
+  });
+
+  it("Agenda crea giorni singoli e gruppi semantici", () => {
+    const g = groupTasks([
+      mk({ due: "2026-07-01" }), mk({ scheduled: TODAY }), mk({ due: "2026-07-08" }),
+      mk({ due: "2026-07-20" }), mk({ due: null }),
+    ], filter({ due: "all" }), "due", "agenda", TODAY, { agendaHorizonDays: 7 });
+    expect(g.map((group) => group.label)).toEqual(["In ritardo", "Oggi", "Mercoledì", "Dopo", "Senza data"]);
+  });
+});
+
+describe("tasksForDay", () => {
+  it("proietta una sola volta dalla casa stabile usando due prima di scheduled", () => {
+    const task = mk({ file: "_inbox/Inbox.md", due: TODAY, scheduled: TODAY });
+    expect(tasksForDay([task], TODAY)).toEqual([task]);
+    expect(tasksForDay([mk({ due: "2026-07-10", scheduled: TODAY })], TODAY)).toEqual([]);
+    expect(tasksForDay([mk({ due: null, scheduled: TODAY })], TODAY)).toHaveLength(1);
   });
 });

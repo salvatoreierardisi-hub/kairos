@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addTagLine, setDueLine, setPriorityLine, setTaskTextLine } from "../src/core/updateLine";
+import { addTagLine, setDueLine, setPriorityLine, setScheduledLine, setTaskTextLine } from "../src/core/updateLine";
 
 describe("setTaskTextLine", () => {
   it("modifica il testo preservando tutti i metadati", () => {
@@ -24,6 +24,14 @@ describe("setTaskTextLine", () => {
   it("ignora testo vuoto e righe non task", () => {
     expect(setTaskTextLine("- [ ] Testo", "   ")).toBe("- [ ] Testo");
     expect(setTaskTextLine("Testo libero", "Altro")).toBe("Testo libero");
+  });
+});
+
+describe("setScheduledLine", () => {
+  it("aggiunge e rimuove la data pianificata", () => {
+    const line = setScheduledLine("- [ ] Task 📅 2026-07-10", "2026-07-08");
+    expect(line).toBe("- [ ] Task ⏳ 2026-07-08 📅 2026-07-10");
+    expect(setScheduledLine(line, null)).toBe("- [ ] Task 📅 2026-07-10");
   });
 });
 

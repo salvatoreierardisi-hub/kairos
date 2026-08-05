@@ -2,6 +2,29 @@
 
 All notable changes to Kairos are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Lossless task-line parsing, scheduled and cancellation dates, safe simple recurrence,
+  and protected single-task reschedule undo.
+- Natural-language capture dates in Italian and English, configurable Agenda grouping,
+  accent-insensitive search, and readable link labels.
+- Versioned local plugin API, status summary, navigation commands, index exclusions,
+  and a pure snapshot-based index core.
+
+### Changed
+
+- Today, Upcoming, sorting, Agenda, and daily projections now use the due date or fall
+  back to the scheduled date while keeping every task in its source note.
+- Initial indexing is chunked and guarded against stale generations; vault-event
+  notifications are debounced and per-file read failures are isolated.
+
+### Fixed
+
+- Richer or invalid recurrence rules no longer risk a partial series update: Kairos
+  leaves the source unchanged and opens it for manual handling.
+
 ## [0.2.2] — 2026-08-04
 
 ### Added

@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, Plugin } from "obsidian";
 import { Settings } from "../types";
 import { EffectiveDailyConfig } from "../io/DailyNotesConfig";
 import { promptText } from "../view/PromptModal";
+import { normalizeExcludedFolders } from "../core/settings";
 
 export interface SettingsHost extends Plugin {
   settings: Settings;
@@ -81,6 +82,29 @@ export class KairosSettingTab extends PluginSettingTab {
     );
     field("Prefisso tag progetto", "Es. progetto/", "projectPrefix", "progetto/");
     field("Prefisso tag area", "Es. area/", "areaPrefix", "area/");
+
+    new Setting(containerEl)
+      .setName("Orizzonte Agenda")
+      .setDesc("Numero di giorni mostrati singolarmente prima del gruppo Dopo (1–365).")
+      .addText((text) => text
+        .setValue(String(this.host.settings.agendaHorizonDays))
+        .onChange(async (value) => {
+          const parsed = Number(value);
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) return;
+          this.host.settings.agendaHorizonDays = parsed;
+          await this.host.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName("Cartelle escluse")
+      .setDesc("Percorsi relativi al vault separati da virgola. .obsidian è sempre esclusa.")
+      .addTextArea((area) => area
+        .setPlaceholder("Archivio, Allegati")
+        .setValue(this.host.settings.excludeFolders.join(", "))
+        .onChange(async (value) => {
+          this.host.settings.excludeFolders = normalizeExcludedFolders(value.split(","));
+          await this.host.saveSettings();
+        }));
 
     if (this.host.settings.savedViews.length > 0) {
       new Setting(containerEl).setName("Viste salvate").setHeading();

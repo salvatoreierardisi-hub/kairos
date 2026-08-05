@@ -3,6 +3,8 @@ import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
 import { Task } from "../types";
 import { sortTasks } from "../core/sorting";
+import { tasksForDay } from "../core/query";
+import { displayTaskText } from "../core/taskText";
 
 export class DailyTasksBlock extends MarkdownRenderChild {
   private unsubscribe: (() => void) | null = null;
@@ -35,11 +37,7 @@ export class DailyTasksBlock extends MarkdownRenderChild {
 
   private tasks(): Task[] {
     return sortTasks(
-      this.index.getAll().filter(
-        (task) =>
-          task.due === this.date &&
-          (task.status === "open" || task.status === "inProgress"),
-      ),
+      tasksForDay(this.index.getAll(), this.date),
       "priority",
     );
   }
@@ -94,7 +92,7 @@ export class DailyTasksBlock extends MarkdownRenderChild {
       });
 
       const body = row.createEl("button", { cls: "kairos-daily-task__body", attr: { type: "button" } });
-      body.createSpan({ cls: "kairos-daily-task__text", text: task.text || "(senza testo)" });
+      body.createSpan({ cls: "kairos-daily-task__text", text: displayTaskText(task.text) || "(senza testo)" });
       body.createSpan({
         cls: "kairos-daily-task__source",
         text: task.file.substring(task.file.lastIndexOf("/") + 1).replace(/\.md$/i, ""),

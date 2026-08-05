@@ -6,7 +6,9 @@ const task = (p: Partial<Task>): Task => ({
   text: "t",
   status: "open",
   due: null,
+  scheduled: null,
   completed: null,
+  cancelled: null,
   priority: null,
   tags: [],
   file: "a.md",
@@ -21,6 +23,11 @@ describe("sortTasks", () => {
     expect(sortTasks(ts, "due").map((t) => t.due)).toEqual(["2026-07-01", "2026-07-10", null]);
   });
 
+  it("ordina per scheduled quando due manca", () => {
+    const ts = [task({ scheduled: "2026-07-10" }), task({ due: "2026-07-05" }), task({ scheduled: "2026-07-01" })];
+    expect(sortTasks(ts, "due").map((t) => t.due ?? t.scheduled)).toEqual(["2026-07-01", "2026-07-05", "2026-07-10"]);
+  });
+
   it("per nota usa file poi line", () => {
     const ts = [
       task({ file: "b.md", line: 0 }),
@@ -32,7 +39,7 @@ describe("sortTasks", () => {
 
   it("ordina per priorità: highest→lowest, poi senza priorità", () => {
     const mk = (priority: Priority | null, text: string): Task => ({
-      text, status: "open", due: null, completed: null, priority, tags: [], file: "f.md", line: 0,
+      text, status: "open", due: null, scheduled: null, completed: null, cancelled: null, priority, tags: [], file: "f.md", line: 0,
       source: `- [ ] ${text}`,
     });
     const input = [mk(null, "z"), mk("low", "l"), mk("highest", "h"), mk("medium", "m")];

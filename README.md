@@ -25,6 +25,10 @@ There is no separate task database and no duplicated source of truth.
   moving the underlying task.
 - **Fast capture.** Create globally in `_inbox/Inbox.md`, or create contextually in the
   current or selected project note.
+- **Natural dates and Agenda.** Capture trailing Italian or English date phrases, then
+  review work day by day within a configurable horizon.
+- **Safe recurrence.** Complete supported daily, weekly, monthly, or yearly series in
+  one guarded write, while richer rules fall back to the source note unchanged.
 - **Unified editor.** Create with an explicit destination, then edit text, status, due
   date, and priority from the same interface.
 - **Create and open.** Turn an Inbox task into a linked detail note, or open a project
@@ -93,7 +97,10 @@ Kairos reads and writes standard Markdown checkboxes:
 | --- | --- |
 | `- [ ]` / `- [/]` / `- [x]` / `- [-]` | Open / in progress / completed / cancelled |
 | `📅 YYYY-MM-DD` | Due date |
+| `⏳ YYYY-MM-DD` | Scheduled date (used when no due date exists) |
 | `✅ YYYY-MM-DD` | Completion date |
+| `❌ YYYY-MM-DD` | Cancellation date |
+| `🔁 every [N] day\|week\|month\|year [when done]` | Supported recurrence |
 | `🔺` / `⏫` / `🔼` / `🔽` / `⏬` | Highest to lowest priority |
 | `#tag` | Standard Markdown tag |
 
@@ -128,7 +135,18 @@ Kairos requires Obsidian 1.5.0 or later and works on desktop and mobile.
   detail note.
 
 Settings let you configure the Inbox path, inherit Obsidian Daily Notes settings or use
-a custom daily-note setup, and define project and area tag prefixes.
+a custom daily-note setup, define the Agenda horizon, exclude folders from indexing,
+and define project and area tag prefixes.
+
+## Plugin API
+
+Other local plugins and automations can use the versioned API exposed at
+`app.plugins.plugins.kairos.api`. Version 1 returns plain data objects and offers guarded
+query, create, complete, status, reschedule, priority, move, delete, and navigation
+operations. Every persistent mutation still passes through `TaskWriter`; callers must
+refresh stale task references instead of bypassing conflict protection. The serializable
+`api.descriptor` lists the available operations and the `file + line + source` task-ref
+contract.
 
 ## Development
 

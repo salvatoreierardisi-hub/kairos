@@ -412,6 +412,31 @@
   color: var(--text-accent);
 }
 
+.kairos-group--overdue .kairos-group__title {
+  color: var(--text-error);
+}
+
+.kairos-group--today .kairos-group__title::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--color-orange);
+  vertical-align: 1px;
+}
+
+.kairos-due-inline[role="button"] {
+  cursor: var(--cursor-link);
+}
+
+.kairos-due-inline.is-scheduled::before {
+  content: "◷";
+  margin-right: 3px;
+  color: var(--text-muted);
+}
+
 .kairos-group__sub {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
@@ -1166,6 +1191,31 @@
 .kairos-quickadd-input:focus-visible {
   outline: none !important;
   box-shadow: none !important;
+}
+
+.kairos-natural-date-preview {
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  opacity: 0;
+  transition: opacity 120ms ease, max-height 120ms ease;
+}
+
+.kairos-natural-date-preview.is-visible {
+  max-height: 28px;
+  margin-top: 4px;
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .kairos-task:hover,
+  .kairos-group__head:hover,
+  .kairos-iconbtn:hover,
+  .kairos-quickadd-tool:hover {
+    background: transparent;
+  }
 }
 
 .kairos-quickadd-footer {
