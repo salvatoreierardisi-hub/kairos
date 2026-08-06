@@ -78,8 +78,16 @@ export function matchesTask(task: Task, filter: TaskFilter, today: string): bool
 
 export function tasksForDay(tasks: readonly Task[], day: string): Task[] {
   return tasks.filter((task) =>
-    effectiveDate(task) === day && (task.status === "open" || task.status === "inProgress"),
+    effectiveDate(task) === day
+      && (task.status === "open" || task.status === "inProgress" || task.status === "done"),
   );
+}
+
+/** Mantiene l'ordinamento ricevuto, spostando soltanto i completati in fondo. */
+export function orderDailyTasks(tasks: readonly Task[]): Task[] {
+  const active = tasks.filter((task) => task.status !== "done");
+  const completed = tasks.filter((task) => task.status === "done");
+  return [...active, ...completed];
 }
 
 /** Etichette italiane per la priorità, riusate anche in view/AttivitaView.ts. */

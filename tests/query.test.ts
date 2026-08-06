@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { matchesTask, groupTasks, DEFAULT_FILTER, TaskFilter, tasksForDay } from "../src/core/query";
+import {
+  matchesTask,
+  groupTasks,
+  DEFAULT_FILTER,
+  TaskFilter,
+  tasksForDay,
+  orderDailyTasks,
+} from "../src/core/query";
 import { Task, Priority } from "../src/types";
 
 function mk(p: Partial<Task>): Task {
@@ -147,5 +154,26 @@ describe("tasksForDay", () => {
     expect(tasksForDay([task], TODAY)).toEqual([task]);
     expect(tasksForDay([mk({ due: "2026-07-10", scheduled: TODAY })], TODAY)).toEqual([]);
     expect(tasksForDay([mk({ due: null, scheduled: TODAY })], TODAY)).toHaveLength(1);
+  });
+
+  it("mantiene aperti, in corso e completati ma esclude annullati e altre date", () => {
+    const open = mk({ text: "Aperto", due: TODAY, status: "open" });
+    const inProgress = mk({ text: "In corso", due: TODAY, status: "inProgress" });
+    const done = mk({ text: "Fatto", due: TODAY, status: "done", completed: TODAY });
+    const cancelled = mk({ text: "Annullato", due: TODAY, status: "cancelled", cancelled: TODAY });
+    const tomorrow = mk({ text: "Domani", due: "2026-07-07", status: "done" });
+
+    expect(tasksForDay([open, inProgress, done, cancelled, tomorrow], TODAY))
+      .toEqual([open, inProgress, done]);
+  });
+
+  it("sposta i completati in fondo mantenendo l'ordine di ciascun insieme", () => {
+    const doneHigh = mk({ text: "Fatto prioritario", status: "done", priority: "highest" });
+    const activeLow = mk({ text: "Aperto basso", status: "open", priority: "low" });
+    const activeMedium = mk({ text: "In corso medio", status: "inProgress", priority: "medium" });
+    const doneLow = mk({ text: "Fatto basso", status: "done", priority: "low" });
+
+    expect(orderDailyTasks([doneHigh, activeLow, activeMedium, doneLow]))
+      .toEqual([activeLow, activeMedium, doneHigh, doneLow]);
   });
 });

@@ -232,7 +232,7 @@ export class QuickAddModal extends Modal {
         cls: "kairos-quickadd-create-menu",
         attr: { type: "button", "aria-label": "Altre modalità di creazione" },
       });
-      setIcon(this.createMenuButton, "chevron-down");
+      this.createMenuButton.createSpan({ cls: "kairos-quickadd-create-chevron" });
       this.createMenuButton.addEventListener("click", (event) => this.openCreateMenu(event));
     }
     this.refreshCreateButton();
