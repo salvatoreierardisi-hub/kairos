@@ -43,8 +43,8 @@ describe("toggleLine", () => {
     expect(setStatusLine("- [/] task", "done", "2026-07-05")).toBe("- [x] task ✅ 2026-07-05");
   });
 
-  it("setStatusLine da done a cancelled rimuove ✅", () => {
-    expect(setStatusLine("- [x] task ✅ 2026-07-05", "cancelled", "2026-07-05")).toBe("- [-] task");
+  it("setStatusLine da done a cancelled sostituisce ✅ con ❌", () => {
+    expect(setStatusLine("- [x] task ✅ 2026-07-05", "cancelled", "2026-07-05")).toBe("- [-] task ❌ 2026-07-05");
   });
 
   it("mantiene il block ID in coda quando completa e riapre", () => {

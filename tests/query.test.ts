@@ -1,10 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { matchesTask, groupTasks, DEFAULT_FILTER, TaskFilter } from "../src/core/query";
+import {
+  matchesTask,
+  groupTasks,
+  DEFAULT_FILTER,
+  TaskFilter,
+  tasksForDay,
+  orderDailyTasks,
+} from "../src/core/query";
 import { Task, Priority } from "../src/types";
 
 function mk(p: Partial<Task>): Task {
   return {
-    text: "t", status: "open", due: null, completed: null, priority: null,
+    text: "t", status: "open", due: null, scheduled: null, completed: null, cancelled: null, priority: null,
     tags: [], file: "n.md", line: 0, source: "- [ ] t", ...p,
   };
 }
@@ -47,6 +54,16 @@ describe("matchesTask", () => {
     expect(matchesTask(mk({ due: "2026-07-09" }), f, TODAY)).toBe(true);
     expect(matchesTask(mk({ due: "2026-07-10" }), f, TODAY)).toBe(false);
     expect(matchesTask(mk({ due: null }), f, TODAY)).toBe(false);
+  });
+
+  it("ricerca senza distinzione di accenti e include il titolo Dettagli", () => {
+    expect(matchesTask(mk({ text: "Qualità città" }), filter({ text: "qualita citta" }), TODAY)).toBe(true);
+    expect(matchesTask(mk({ detailPath: "Dettagli/Revisione qualità.md" }), filter({ text: "revisione qualita" }), TODAY)).toBe(true);
+  });
+
+  it("usa due prima di scheduled come data effettiva", () => {
+    expect(matchesTask(mk({ due: null, scheduled: TODAY }), filter({ exactDay: TODAY }), TODAY)).toBe(true);
+    expect(matchesTask(mk({ due: "2026-07-10", scheduled: TODAY }), filter({ exactDay: TODAY }), TODAY)).toBe(false);
   });
 
   it("tag gerarchico: 'progetto' matcha 'progetto/casa'", () => {
@@ -120,5 +137,43 @@ describe("groupTasks", () => {
     const g = groupTasks(tasks, filter({ due: "all" }), "note", "none", TODAY);
     expect(g).toHaveLength(1);
     expect(g[0].label).toBe("");
+  });
+
+  it("Agenda crea giorni singoli e gruppi semantici", () => {
+    const g = groupTasks([
+      mk({ due: "2026-07-01" }), mk({ scheduled: TODAY }), mk({ due: "2026-07-08" }),
+      mk({ due: "2026-07-20" }), mk({ due: null }),
+    ], filter({ due: "all" }), "due", "agenda", TODAY, { agendaHorizonDays: 7 });
+    expect(g.map((group) => group.label)).toEqual(["In ritardo", "Oggi", "Mercoledì", "Dopo", "Senza data"]);
+  });
+});
+
+describe("tasksForDay", () => {
+  it("proietta una sola volta dalla casa stabile usando due prima di scheduled", () => {
+    const task = mk({ file: "_inbox/Inbox.md", due: TODAY, scheduled: TODAY });
+    expect(tasksForDay([task], TODAY)).toEqual([task]);
+    expect(tasksForDay([mk({ due: "2026-07-10", scheduled: TODAY })], TODAY)).toEqual([]);
+    expect(tasksForDay([mk({ due: null, scheduled: TODAY })], TODAY)).toHaveLength(1);
+  });
+
+  it("mantiene aperti, in corso e completati ma esclude annullati e altre date", () => {
+    const open = mk({ text: "Aperto", due: TODAY, status: "open" });
+    const inProgress = mk({ text: "In corso", due: TODAY, status: "inProgress" });
+    const done = mk({ text: "Fatto", due: TODAY, status: "done", completed: TODAY });
+    const cancelled = mk({ text: "Annullato", due: TODAY, status: "cancelled", cancelled: TODAY });
+    const tomorrow = mk({ text: "Domani", due: "2026-07-07", status: "done" });
+
+    expect(tasksForDay([open, inProgress, done, cancelled, tomorrow], TODAY))
+      .toEqual([open, inProgress, done]);
+  });
+
+  it("sposta i completati in fondo mantenendo l'ordine di ciascun insieme", () => {
+    const doneHigh = mk({ text: "Fatto prioritario", status: "done", priority: "highest" });
+    const activeLow = mk({ text: "Aperto basso", status: "open", priority: "low" });
+    const activeMedium = mk({ text: "In corso medio", status: "inProgress", priority: "medium" });
+    const doneLow = mk({ text: "Fatto basso", status: "done", priority: "low" });
+
+    expect(orderDailyTasks([doneHigh, activeLow, activeMedium, doneLow]))
+      .toEqual([activeLow, activeMedium, doneHigh, doneLow]);
   });
 });

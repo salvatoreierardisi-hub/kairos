@@ -92,6 +92,14 @@ describe("parseLine", () => {
   it("accetta trattino o asterisco e rientri", () => {
     expect(parseLine("  * [ ] Task", "f.md", 0)?.text).toBe("Task");
   });
+
+  it("accetta più marcatori di lista e tag Unicode", () => {
+    expect(parseLine("3. [ ] Verifica #qualità/città", "f.md", 0)).toMatchObject({
+      text: "Verifica",
+      tags: ["qualità/città"],
+    });
+    expect(parseLine("+ [ ] Altro", "f.md", 1)?.text).toBe("Altro");
+  });
 });
 
 describe("parseFileContent", () => {
@@ -101,5 +109,17 @@ describe("parseFileContent", () => {
     expect(tasks).toHaveLength(2);
     expect(tasks[0]).toMatchObject({ text: "Uno", line: 1 });
     expect(tasks[1]).toMatchObject({ text: "Due", status: "done", line: 3 });
+  });
+
+  it("include task annidati, esclude code block e righe task dentro callout", () => {
+    const content = [
+      "- [ ] Radice",
+      "  - [ ] Annidato",
+      "```md",
+      "- [ ] Esempio codice",
+      "```",
+      "> - [ ] Dentro callout",
+    ].join("\n");
+    expect(parseFileContent(content, "f.md").map((task) => task.text)).toEqual(["Radice", "Annidato"]);
   });
 });

@@ -32,6 +32,11 @@ describe("formatTaskLine", () => {
       .toBe("- [ ] X ⏫ 📅 2026-07-05");
   });
 
+  it("scrive scheduled prima della scadenza", () => {
+    expect(formatTaskLine({ text: "X", due: "2026-07-05", scheduled: "2026-07-03", important: false }))
+      .toBe("- [ ] X ⏳ 2026-07-03 📅 2026-07-05");
+  });
+
   it("aggiunge link Dettagli e block ID in coda", () => {
     expect(formatTaskLine({
       text: "Approfondire",

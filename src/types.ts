@@ -6,7 +6,9 @@ export interface Task {
   text: string;
   status: TaskStatus;
   due: string | null; // "YYYY-MM-DD" o null
+  scheduled: string | null; // data pianificata `⏳`, usata se `due` manca
   completed: string | null; // "YYYY-MM-DD" o null, data del marcatore ✅
+  cancelled: string | null; // data del marcatore ❌, se presente
   priority: Priority | null;
   tags: string[];     // es. ["progetto/casa"]
   file: string;       // path relativo al vault
@@ -29,6 +31,8 @@ export interface Settings {
   dailyConfigMode: DailyConfigMode;
   projectPrefix: string;  // es. "progetto/"
   areaPrefix: string;     // es. "area/"
+  agendaHorizonDays: number;
+  excludeFolders: string[];
   savedViews: SavedView[];
   /** Stato del pannello (filtro/ordina/raggruppa/collassati), persistito tra le sessioni. */
   panelState?: TaskPanelState;
@@ -42,12 +46,15 @@ export const DEFAULT_SETTINGS: Settings = {
   dailyConfigMode: "obsidian",
   projectPrefix: "progetto/",
   areaPrefix: "area/",
+  agendaHorizonDays: 14,
+  excludeFolders: [],
   savedViews: [],
 };
 
 export interface NewTaskInput {
   text: string;
   due: string | null;
+  scheduled?: string | null;
   /** Priorità esplicita della QuickAdd evoluta. Se assente, `important` scrive `high`. */
   priority?: Priority | null;
   important: boolean;

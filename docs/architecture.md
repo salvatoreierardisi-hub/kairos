@@ -15,8 +15,9 @@ Markdown notes ──▶ TaskIndex ──▶ TaskPanel / daily projection
 - `src/core/` contains pure, synchronous domain logic: parsing, formatting, filtering,
   sorting, placement, safe line resolution, task-detail links, and daily insertion.
   It has no imports from `obsidian` and is covered by Vitest.
-- `src/index/TaskIndex.ts` indexes task lines across the vault and reacts to file
-  create, modify, delete, and rename events.
+- `src/index/TaskIndexCore.ts` owns pure per-file buckets and the cached flat snapshot;
+  `src/index/TaskIndex.ts` performs chunked vault I/O, exclusions, generation checks,
+  debounced notifications, and file-event handling.
 - `src/io/TaskWriter.ts` is the only component that creates, moves, updates, or deletes
   persistent task lines.
 - `src/io/DailyNotesConfig.ts` resolves the effective Daily Notes configuration and
@@ -27,6 +28,8 @@ Markdown notes ──▶ TaskIndex ──▶ TaskPanel / daily projection
 - `src/view/DailyTasksBlock.ts` renders the interactive `kairos-tasks` projection inside
   a recognized daily note.
 - `src/settings/` exposes configurable paths, daily-note behavior, and tag prefixes.
+- `src/api.ts` exposes versioned plain-data queries and guarded mutations to sibling
+  plugins without leaking Obsidian objects.
 - `src/main.ts` registers views, commands, processors, settings, and workspace events.
 
 ## Data model
@@ -47,8 +50,9 @@ Global capture writes to the configured Inbox. Contextual capture writes to the 
 or selected note. Assigning or changing a due date updates only the task metadata; it
 does not move the source line.
 
-A due date controls projections such as Today, Upcoming, and the interactive daily-note
-block. This keeps physical storage independent from where a task is useful to see.
+The effective date (`due`, otherwise `scheduled`) controls Today, Upcoming, Agenda, and
+the interactive daily-note block. This keeps physical storage independent from where a
+task is useful to see.
 
 ## Runtime dependencies
 

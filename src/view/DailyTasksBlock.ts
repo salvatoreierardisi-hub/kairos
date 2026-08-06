@@ -3,6 +3,20 @@ import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
 import { Task } from "../types";
 import { sortTasks } from "../core/sorting";
+import { orderDailyTasks, tasksForDay } from "../core/query";
+import { displayTaskText } from "../core/taskText";
+
+function nearestScrollContainer(element: HTMLElement): HTMLElement | null {
+  let current = element.parentElement;
+  while (current) {
+    const overflowY = window.getComputedStyle(current).overflowY;
+    if (/auto|scroll|overlay/.test(overflowY) && current.scrollHeight > current.clientHeight) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
 
 export class DailyTasksBlock extends MarkdownRenderChild {
   private unsubscribe: (() => void) | null = null;
@@ -34,14 +48,10 @@ export class DailyTasksBlock extends MarkdownRenderChild {
   }
 
   private tasks(): Task[] {
-    return sortTasks(
-      this.index.getAll().filter(
-        (task) =>
-          task.due === this.date &&
-          (task.status === "open" || task.status === "inProgress"),
-      ),
+    return orderDailyTasks(sortTasks(
+      tasksForDay(this.index.getAll(), this.date),
       "priority",
-    );
+    ));
   }
 
   private render(): void {
@@ -54,10 +64,6 @@ export class DailyTasksBlock extends MarkdownRenderChild {
     setIcon(toggle.createSpan({ cls: "kairos-daily-header__chevron" }), this.collapsed ? "chevron-right" : "chevron-down");
     toggle.createSpan({ cls: "kairos-daily-header__title", text: "Task" });
     toggle.setAttribute("aria-label", this.collapsed ? "Espandi task" : "Comprimi task");
-    toggle.addEventListener("click", () => {
-      this.collapsed = !this.collapsed;
-      this.render();
-    });
 
     const add = header.createEl("button", {
       cls: "kairos-daily-header__add",
@@ -66,9 +72,27 @@ export class DailyTasksBlock extends MarkdownRenderChild {
     add.createSpan({ cls: "kairos-daily-header__add-symbol", text: "+" });
     add.addEventListener("click", () => this.onAddTask(this.date));
 
-    if (this.collapsed) return;
-
     const list = this.containerEl.createDiv({ cls: "kairos-daily-list" });
+    list.toggleClass("is-collapsed", this.collapsed);
+    toggle.addEventListener("click", () => {
+      const scrollContainer = nearestScrollContainer(toggle);
+      const scrollTop = scrollContainer?.scrollTop ?? window.scrollY;
+      this.collapsed = !this.collapsed;
+      toggle.setAttribute("aria-expanded", String(!this.collapsed));
+      toggle.setAttribute("aria-label", this.collapsed ? "Espandi task" : "Comprimi task");
+      setIcon(
+        toggle.querySelector<HTMLElement>(".kairos-daily-header__chevron")!,
+        this.collapsed ? "chevron-right" : "chevron-down",
+      );
+      list.toggleClass("is-collapsed", this.collapsed);
+      const restoreScroll = () => {
+        if (scrollContainer) scrollContainer.scrollTop = scrollTop;
+        else window.scrollTo({ top: scrollTop });
+      };
+      restoreScroll();
+      window.requestAnimationFrame(restoreScroll);
+    });
+
     const tasks = this.tasks();
     if (tasks.length === 0) {
       list.createDiv({ cls: "kairos-daily-empty", text: "Nessun task per questa data." });
@@ -76,25 +100,38 @@ export class DailyTasksBlock extends MarkdownRenderChild {
     }
 
     for (const task of tasks) {
-      const row = list.createDiv({ cls: "kairos-daily-task" });
+      const isDone = task.status === "done";
+      const isProtectedRecurrence = isDone && task.source.includes("🔁");
+      const row = list.createDiv({
+        cls: `kairos-daily-task kairos-status-${task.status}${isProtectedRecurrence ? " is-protected-recurrence" : ""}`,
+      });
       const check = row.createEl("button", {
         cls: "kairos-daily-check",
-        attr: { "aria-label": "Completa task", type: "button" },
+        attr: {
+          "aria-label": isProtectedRecurrence
+            ? "Task ricorrente completato; la prossima occorrenza è già stata creata"
+            : isDone ? "Riapri task" : "Completa task",
+          "aria-disabled": String(isProtectedRecurrence),
+          "aria-pressed": String(isDone),
+          type: "button",
+          ...(isProtectedRecurrence
+            ? { title: "Ricorrenza completata: la prossima occorrenza è già stata creata" }
+            : {}),
+        },
       });
       check.createSpan({
-        cls: task.status === "inProgress"
-          ? "kairos-daily-complete-icon is-in-progress"
-          : "kairos-daily-complete-icon",
+        cls: `kairos-checkmark kairos-checkmark--${task.status}`,
       });
       check.addEventListener("click", (event) => {
         event.stopPropagation();
+        if (isProtectedRecurrence) return;
         void this.writer.toggleTask(task).catch((error) =>
           new Notice(`Kairos: impossibile aggiornare il task — ${error instanceof Error ? error.message : String(error)}`),
         );
       });
 
       const body = row.createEl("button", { cls: "kairos-daily-task__body", attr: { type: "button" } });
-      body.createSpan({ cls: "kairos-daily-task__text", text: task.text || "(senza testo)" });
+      body.createSpan({ cls: "kairos-daily-task__text", text: displayTaskText(task.text) || "(senza testo)" });
       body.createSpan({
         cls: "kairos-daily-task__source",
         text: task.file.substring(task.file.lastIndexOf("/") + 1).replace(/\.md$/i, ""),

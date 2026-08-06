@@ -8,7 +8,7 @@ import {
   TFolder,
   WorkspaceLeaf,
 } from "obsidian";
-import { Settings, DEFAULT_SETTINGS, Task } from "./types";
+import { Settings, DEFAULT_SETTINGS, Task, TaskPanelState } from "./types";
 import { TaskIndex } from "./index/TaskIndex";
 import { TaskWriter } from "./io/TaskWriter";
 import { DailyNotesConfigService, EffectiveDailyConfig } from "./io/DailyNotesConfig";
@@ -18,8 +18,13 @@ import { QuickAddModal } from "./view/QuickAddModal";
 import { KairosSettingTab } from "./settings/SettingsTab";
 import { DailyTasksBlock } from "./view/DailyTasksBlock";
 import { ensureDailyTasksBlock } from "./core/dailyInsert";
+import { KairosApi } from "./api";
+import { DEFAULT_FILTER } from "./core/query";
+import { dayKey, effectiveDate } from "./core/dates";
+import { normalizeExcludedFolders } from "./core/settings";
 
 export default class KairosPlugin extends Plugin {
+  api!: KairosApi;
   settings: Settings = DEFAULT_SETTINGS;
   private index!: TaskIndex;
   private writer!: TaskWriter;
@@ -34,13 +39,21 @@ export default class KairosPlugin extends Plugin {
       new Notice(`Kairos: migrazione Inbox non riuscita — ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    this.index = new TaskIndex(this.app);
+    this.index = new TaskIndex(this.app, () => this.settings);
     this.dailyNotes = new DailyNotesConfigService(this.app, () => this.settings);
     this.writer = new TaskWriter(this.app, () => this.settings);
+    this.api = new KairosApi(
+      this.index,
+      this.writer,
+      (day) => this.openForDay(day),
+      (task) => this.openTaskSource(task),
+    );
     this.index.registerVaultEvents(this);
 
     this.registerMarkdownCodeBlockProcessor("kairos-tasks", async (_source, el, ctx) => {
+      const wasConnected = el.isConnected;
       const date = await this.dailyNotes.dateForPath(ctx.sourcePath);
+      if (wasConnected && !el.isConnected) return;
       if (!date) {
         el.createDiv({ cls: "kairos-daily-empty", text: "Questa vista Kairos funziona dentro una daily configurata." });
         return;
@@ -98,6 +111,16 @@ export default class KairosPlugin extends Plugin {
       callback: () => this.activateView(),
     });
     this.addCommand({
+      id: "open-today",
+      name: "Apri i task di oggi (Kairos)",
+      callback: () => this.openForDay(dayKey()),
+    });
+    this.addCommand({
+      id: "open-upcoming",
+      name: "Apri i prossimi task (Kairos)",
+      callback: () => this.openUpcoming(),
+    });
+    this.addCommand({
       id: "quick-add-task",
       name: "Nuovo task in Inbox (Kairos)",
       callback: () => this.openQuickAdd(),
@@ -117,8 +140,31 @@ export default class KairosPlugin extends Plugin {
       name: "Apri Kairos nella sidebar",
       callback: () => this.activateSidebar(),
     });
+    this.addCommand({
+      id: "open-task-list",
+      name: "Apri lista task (alias integrazioni Kairos)",
+      callback: () => this.activateView(),
+    });
+    this.addCommand({
+      id: "open-task-sidebar",
+      name: "Apri sidebar task (alias integrazioni Kairos)",
+      callback: () => this.activateSidebar(),
+    });
 
     this.addSettingTab(new KairosSettingTab(this.app, this));
+
+    const status = this.addStatusBarItem();
+    const refreshStatus = () => {
+      const today = dayKey();
+      const overdue = this.index.getAll().filter((task) =>
+        task.status !== "done" && task.status !== "cancelled" && effectiveDate(task) !== null && effectiveDate(task)! < today,
+      ).length;
+      status.setText(overdue > 0 ? `Kairos · ${overdue} in ritardo` : "Kairos · in ordine");
+      status.setAttribute("aria-label", "Apri i task di oggi in Kairos");
+    };
+    status.addEventListener("click", () => void this.openForDay(dayKey()));
+    this.register(this.index.onChange(refreshStatus));
+    refreshStatus();
 
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
@@ -142,6 +188,7 @@ export default class KairosPlugin extends Plugin {
           const taskInput = {
             text: input.text,
             due: input.due,
+            scheduled: input.scheduled,
             priority: input.priority,
             important: false,
             targetPath: input.targetPath,
@@ -178,18 +225,29 @@ export default class KairosPlugin extends Plugin {
   private claimDailyProjection(el: HTMLElement, ctx: MarkdownPostProcessorContext): () => void {
     const line = ctx.getSectionInfo(el)?.lineStart ?? "daily";
     const key = `${ctx.sourcePath}:${line}`;
+    const host = el.closest<HTMLElement>(".cm-embed-block");
+
+    // Reading view has a single renderer and must never be hidden by Live Preview
+    // deduplication during an asynchronous mode transition.
+    if (!host) {
+      delete el.dataset.kairosDailyProjection;
+      el.removeClass("kairos-daily-projection--duplicate");
+      return () => {};
+    }
+
     const viewRoot = el.closest<HTMLElement>(".workspace-leaf-content") ?? el.ownerDocument.body;
-    const host = el.closest<HTMLElement>(".cm-embed-block") ?? el;
     const previousHosts = new Set<HTMLElement>();
 
     for (const candidate of Array.from(
       viewRoot.querySelectorAll<HTMLElement>("[data-kairos-daily-projection]"),
     )) {
-      if (candidate.dataset.kairosDailyProjection === key && candidate !== host) previousHosts.add(candidate);
-    }
-    for (const block of Array.from(viewRoot.querySelectorAll<HTMLElement>(".kairos-daily-block"))) {
-      const candidate = (block.closest(".cm-embed-block") as HTMLElement | null) ?? block;
-      if (candidate !== host) previousHosts.add(candidate);
+      if (
+        candidate.matches(".cm-embed-block") &&
+        candidate.dataset.kairosDailyProjection === key &&
+        candidate !== host
+      ) {
+        previousHosts.add(candidate);
+      }
     }
 
     for (const previous of previousHosts) {
@@ -204,7 +262,12 @@ export default class KairosPlugin extends Plugin {
       host.removeClass("kairos-daily-projection--duplicate");
       const remaining = Array.from(
         viewRoot.querySelectorAll<HTMLElement>("[data-kairos-daily-projection]"),
-      ).filter((candidate) => candidate.dataset.kairosDailyProjection === key && candidate.isConnected);
+      ).filter(
+        (candidate) =>
+          candidate.matches(".cm-embed-block") &&
+          candidate.dataset.kairosDailyProjection === key &&
+          candidate.isConnected,
+      );
       remaining[remaining.length - 1]?.removeClass("kairos-daily-projection--duplicate");
     };
   }
@@ -217,6 +280,7 @@ export default class KairosPlugin extends Plugin {
           await this.writer.updateTask(task, {
             text: input.text,
             due: input.due,
+            scheduled: input.scheduled,
             priority: input.priority,
             status: input.status,
           });
@@ -235,6 +299,36 @@ export default class KairosPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(task.file);
     if (!(file instanceof TFile)) return;
     await this.app.workspace.getLeaf("tab").openFile(file, { eState: { line: task.line } });
+  }
+
+  private async openForDay(day: string): Promise<void> {
+    const state: TaskPanelState = {
+      view: "all",
+      filter: { ...DEFAULT_FILTER, exactDay: day },
+      sort: "due",
+      group: "none",
+      collapsed: [],
+    };
+    this.settings.panelState = state;
+    await this.saveData(this.settings);
+    await this.activateView();
+    const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_KAIROS)[0]?.view;
+    if (view instanceof AttivitaView) view.applyPanelState(state);
+  }
+
+  private async openUpcoming(): Promise<void> {
+    const state: TaskPanelState = {
+      view: "upcoming",
+      filter: { ...DEFAULT_FILTER, due: "upcoming", exactDay: null },
+      sort: "due",
+      group: "agenda",
+      collapsed: ["zy-later", "zz-none"],
+    };
+    this.settings.panelState = state;
+    await this.saveData(this.settings);
+    await this.activateView();
+    const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_KAIROS)[0]?.view;
+    if (view instanceof AttivitaView) view.applyPanelState(state);
   }
 
   private async saveUiState(): Promise<void> {
@@ -322,11 +416,15 @@ export default class KairosPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.excludeFolders = normalizeExcludedFolders(this.settings.excludeFolders);
+    this.settings.agendaHorizonDays = Number.isInteger(this.settings.agendaHorizonDays)
+      ? Math.max(1, Math.min(365, this.settings.agendaHorizonDays))
+      : DEFAULT_SETTINGS.agendaHorizonDays;
   }
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    this.index.refresh();
+    await this.index.build();
   }
 
   async getEffectiveDailySettings(): Promise<EffectiveDailyConfig> {

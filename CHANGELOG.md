@@ -2,6 +2,44 @@
 
 All notable changes to Kairos are documented in this file.
 
+## [Unreleased]
+
+## [0.3.0] — 2026-08-06
+
+### Added
+
+- Lossless task-line parsing, scheduled and cancellation dates, safe simple recurrence,
+  and protected single-task reschedule undo.
+- Natural-language capture dates in Italian and English, configurable Agenda grouping,
+  accent-insensitive search, and readable link labels.
+- Versioned local plugin API, status summary, navigation commands, index exclusions,
+  and a pure snapshot-based index core.
+- Exact task dates next to their source notes, with direct rescheduling actions that keep
+  relative labels such as Today and Tomorrow visible.
+- Completed tasks remain visible at the end of their daily-note projection and can be
+  reopened safely; completed recurring occurrences remain protected.
+
+### Changed
+
+- Today, Upcoming, sorting, Agenda, and daily projections now use the due date or fall
+  back to the scheduled date while keeping every task in its source note.
+- Initial indexing is chunked and guarded against stale generations; vault-event
+  notifications are debounced and per-file read failures are isolated.
+- Task rows use consistent CSS checkboxes, visible action menus, clearer metadata, and
+  touch targets sized for mobile interaction.
+- Daily-note projections use lighter surfaces, compact controls, and a right-aligned add
+  action across desktop and mobile.
+- The mobile task editor provides more writing space while keeping destination, schedule,
+  priority, and split-create actions visible above the keyboard.
+
+### Fixed
+
+- Richer or invalid recurrence rules no longer risk a partial series update: Kairos
+  leaves the source unchanged and opens it for manual handling.
+- Expanding or collapsing a daily task projection preserves the reading position on iOS.
+- Mobile controls no longer inherit opaque or compressed button styling from the host
+  theme, and the task destination remains fully visible in the editor header.
+
 ## [0.2.2] — 2026-08-04
 
 ### Added
@@ -81,6 +119,8 @@ All notable changes to Kairos are documented in this file.
 - Search, filters, sorting, grouping, saved views, multiselect, and bulk actions.
 - Configurable Inbox, Daily Notes integration, priorities, dates, tags, and task status.
 
+[Unreleased]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/salvatoreierardisi-hub/kairos/compare/v0.1.0...v0.2.0

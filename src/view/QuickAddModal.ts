@@ -2,6 +2,7 @@ import { App, Menu, Modal, setIcon } from "obsidian";
 import { Priority, Task, TaskStatus } from "../types";
 import { PRIORITY_LABELS } from "../core/query";
 import { pickNote } from "./NotePicker";
+import { parseNaturalDate } from "../core/naturalDate";
 
 const PRIORITY_ICON: Record<Priority, string> = {
   highest: "🔺",
@@ -30,6 +31,7 @@ const STATUS_OPTIONS: [TaskStatus, string, string][] = [
 export interface TaskEditorResult {
   text: string;
   due: string | null;
+  scheduled: string | null;
   priority: Priority | null;
   status: TaskStatus;
   targetPath?: string;
@@ -61,6 +63,11 @@ function dateLabel(due: string | null): string {
   return due;
 }
 
+function dateControlLabel(due: string | null, scheduled: string | null): string {
+  if (due) return dateLabel(due);
+  return scheduled ? `Pianificato ${dateLabel(scheduled)}` : "Programma";
+}
+
 function priorityLabel(priority: Priority | null): string {
   if (priority === null) return "Priorità";
   return `${PRIORITY_ICON[priority]} ${PRIORITY_LABELS[priority]}`;
@@ -70,9 +77,12 @@ export class QuickAddModal extends Modal {
   private static active: QuickAddModal | null = null;
   private text = "";
   private due: string | null = null;
+  private scheduled: string | null = null;
   private priority: Priority | null = null;
   private status: TaskStatus = "open";
   private dateInput: HTMLInputElement | null = null;
+  private dateField: "due" | "scheduled" = "due";
+  private naturalPreview: HTMLElement | null = null;
   private dateButton: HTMLButtonElement | null = null;
   private destinationButton: HTMLButtonElement | null = null;
   private priorityButton: HTMLButtonElement | null = null;
@@ -93,6 +103,7 @@ export class QuickAddModal extends Modal {
     if (task) {
       this.text = task.text;
       this.due = task.due;
+      this.scheduled = task.scheduled;
       this.priority = task.priority;
       this.status = task.status;
       this.targetPath = task.file;
@@ -146,6 +157,7 @@ export class QuickAddModal extends Modal {
     input.addEventListener("input", () => {
       this.text = input.value;
       this.resizeInput(input);
+      this.refreshNaturalPreview();
       this.refreshCreateButton();
     });
     input.addEventListener("keydown", (event) => {
@@ -158,6 +170,8 @@ export class QuickAddModal extends Modal {
       this.resizeInput(input);
       input.focus();
     }, 0);
+    this.naturalPreview = inputWrap.createDiv({ cls: "kairos-natural-date-preview" });
+    this.refreshNaturalPreview();
   }
 
   private renderFooter(parent: HTMLElement): void {
@@ -182,14 +196,18 @@ export class QuickAddModal extends Modal {
       attr: { type: "button" },
     });
     setIcon(this.dateButton.createSpan({ cls: "kairos-quickadd-tool__icon" }), "calendar-days");
-    this.dateButton.createSpan({ cls: "kairos-quickadd-tool__label", text: dateLabel(this.due) });
+    this.dateButton.createSpan({ cls: "kairos-quickadd-tool__label", text: dateControlLabel(this.due, this.scheduled) });
     this.dateButton.addEventListener("click", (event) => this.openDateMenu(event));
 
     this.dateInput = tools.createEl("input", {
       cls: "kairos-quickadd-date-input",
       attr: { type: "date", "aria-label": "Scegli data" },
     });
-    this.dateInput.addEventListener("change", () => this.setDue(this.dateInput?.value || null));
+    this.dateInput.addEventListener("change", () => {
+      const value = this.dateInput?.value || null;
+      if (this.dateField === "scheduled") this.setScheduled(value);
+      else this.setDue(value);
+    });
 
     this.priorityButton = tools.createEl("button", {
       cls: "kairos-quickadd-tool kairos-quickadd-tool--priority",
@@ -214,7 +232,7 @@ export class QuickAddModal extends Modal {
         cls: "kairos-quickadd-create-menu",
         attr: { type: "button", "aria-label": "Altre modalità di creazione" },
       });
-      setIcon(this.createMenuButton, "chevron-down");
+      this.createMenuButton.createSpan({ cls: "kairos-quickadd-create-chevron" });
       this.createMenuButton.addEventListener("click", (event) => this.openCreateMenu(event));
     }
     this.refreshCreateButton();
@@ -319,16 +337,26 @@ export class QuickAddModal extends Modal {
     });
     menu.addSeparator();
     menu.addItem((item) =>
-      item.setTitle("Scegli data...").setIcon("calendar-plus").onClick(() => this.openDatePicker()),
+      item.setTitle("Scegli scadenza...").setIcon("calendar-plus").onClick(() => this.openDatePicker("due")),
     );
     if (this.due !== null) {
       menu.addItem((item) => item.setTitle("Rimuovi data").setIcon("calendar-x").onClick(() => this.setDue(null)));
     }
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item.setTitle(this.scheduled ? `Pianificata: ${this.scheduled}` : "Aggiungi data pianificata...")
+        .setIcon("clock-3").onClick(() => this.openDatePicker("scheduled")),
+    );
+    if (this.scheduled) {
+      menu.addItem((item) => item.setTitle("Rimuovi data pianificata").setIcon("clock-9").onClick(() => this.setScheduled(null)));
+    }
     menu.showAtMouseEvent(event);
   }
 
-  private openDatePicker(): void {
+  private openDatePicker(field: "due" | "scheduled"): void {
     if (!this.dateInput) return;
+    this.dateField = field;
+    this.dateInput.value = (field === "due" ? this.due : this.scheduled) ?? "";
     this.dateInput.focus();
     const picker = this.dateInput as HTMLInputElement & { showPicker?: () => void };
     if (picker.showPicker) {
@@ -374,6 +402,12 @@ export class QuickAddModal extends Modal {
   private setDue(due: string | null): void {
     this.due = due;
     this.refreshDateButton();
+    this.refreshNaturalPreview();
+  }
+
+  private setScheduled(scheduled: string | null): void {
+    this.scheduled = scheduled;
+    this.refreshDateButton();
   }
 
   private setPriority(priority: Priority | null): void {
@@ -383,10 +417,20 @@ export class QuickAddModal extends Modal {
 
   private refreshDateButton(): void {
     if (!this.dateButton) return;
-    this.dateButton.toggleClass("is-active", this.due !== null);
+    this.dateButton.toggleClass("is-active", this.due !== null || this.scheduled !== null);
     const label = this.dateButton.querySelector(".kairos-quickadd-tool__label");
-    if (label) label.textContent = dateLabel(this.due);
+    if (label) label.textContent = dateControlLabel(this.due, this.scheduled);
     if (this.dateInput) this.dateInput.value = this.due ?? "";
+  }
+
+  private refreshNaturalPreview(): void {
+    if (!this.naturalPreview) return;
+    const result = !this.task && this.due === null ? parseNaturalDate(this.text, todayString()) : null;
+    const recognized = result !== null && result.date !== null && result.cleaned !== "";
+    this.naturalPreview.textContent = recognized && result
+      ? `Riconosciuto: ${result.date} · “${result.cleaned}”`
+      : "";
+    this.naturalPreview.toggleClass("is-visible", recognized);
   }
 
   private refreshPriorityButton(): void {
@@ -426,9 +470,12 @@ export class QuickAddModal extends Modal {
     this.submitting = true;
     this.refreshCreateButton();
     try {
+      const parsedNatural = !this.task && this.due === null ? parseNaturalDate(this.text, todayString()) : null;
+      const natural = parsedNatural?.date && parsedNatural.cleaned ? parsedNatural : null;
       await this.onSubmit({
-        text: this.text.trim(),
-        due: this.due,
+        text: natural?.date ? natural.cleaned : this.text.trim(),
+        due: natural?.date ?? this.due,
+        scheduled: this.scheduled,
         priority: this.priority,
         status: this.status,
         targetPath: this.targetPath,

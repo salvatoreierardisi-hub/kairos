@@ -1,8 +1,11 @@
-import { Task, TaskStatus, Priority } from "../types";
+import { Task } from "../types";
+import {
+  firstDate,
+  parseTaskSyntax,
+  PRIORITY_OF_EMOJI,
+} from "./taskSyntax";
+import { Priority } from "../types";
 
-const TASK_RE = /^\s*[-*]\s+\[( |x|X|\/|-)\]\s+(.*)$/;
-const DUE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/;
-const DONE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/;
 const PRIORITY_EMOJI: [string, Priority][] = [
   ["🔺", "highest"],
   ["⏫", "high"],
@@ -10,56 +13,35 @@ const PRIORITY_EMOJI: [string, Priority][] = [
   ["🔽", "low"],
   ["⏬", "lowest"],
 ];
-const PRIORITY_RE = /🔺|⏫|🔼|🔽|⏬/g;
-const TAG_RE = /#([A-Za-z0-9_/\-]+)/g;
-const DETAIL_LINK_RE = /\[\[([^\]|]+)\|Dettagli\]\]/;
-const BLOCK_ID_RE = /\s+\^(kairos-[A-Za-z0-9-]+)\s*$/;
 
 export function parseLine(raw: string, file: string, line: number): Task | null {
-  const m = raw.match(TASK_RE);
-  if (!m) return null;
+  const syntax = parseTaskSyntax(raw);
+  if (!syntax || syntax.status === "unknown") return null;
 
-  const mark = m[1];
-  const status: TaskStatus =
-    mark === "x" || mark === "X"
-      ? "done"
-      : mark === "/"
-        ? "inProgress"
-        : mark === "-"
-          ? "cancelled"
-          : "open";
-  const body = m[2];
-
-  const dueMatch = body.match(DUE_RE);
-  const due = dueMatch ? dueMatch[1] : null;
-  const doneMatch = body.match(DONE_RE);
-  const completed = doneMatch ? doneMatch[1] : null;
-  const priorityMatch = body.match(PRIORITY_RE);
-  const priority = priorityMatch
-    ? (PRIORITY_EMOJI.find(([emoji]) => emoji === priorityMatch[0])?.[1] ?? null)
+  const priorityToken = syntax.tokens.find((token) => token.kind === "priority");
+  const priority = priorityToken?.kind === "priority"
+    ? PRIORITY_OF_EMOJI[priorityToken.emoji] ?? null
     : null;
-  const tags = [...body.matchAll(TAG_RE)].map((t) => t[1]);
-  const rawDetailPath = body.match(DETAIL_LINK_RE)?.[1];
+  const tags = syntax.tokens.flatMap((token) => token.kind === "tag" ? [token.value] : []);
+  const rawDetailPath = syntax.tokens.find((token) => token.kind === "detail")?.target;
   const detailPath = rawDetailPath
     ? rawDetailPath.toLowerCase().endsWith(".md") ? rawDetailPath : `${rawDetailPath}.md`
     : undefined;
-  const blockId = body.match(BLOCK_ID_RE)?.[1];
-
-  const text = body
-    .replace(DUE_RE, "")
-    .replace(DONE_RE, "")
-    .replace(PRIORITY_RE, "")
-    .replace(TAG_RE, "")
-    .replace(DETAIL_LINK_RE, "")
-    .replace(BLOCK_ID_RE, "")
+  const blockId = syntax.tokens.find((token) => token.kind === "blockid")?.value;
+  const text = syntax.tokens
+    .filter((token) => token.kind === "text")
+    .map((token) => token.raw)
+    .join(" ")
     .replace(/\s+/g, " ")
     .trim();
 
   return {
     text,
-    status,
-    due,
-    completed,
+    status: syntax.status,
+    due: firstDate(syntax.tokens, "📅"),
+    scheduled: firstDate(syntax.tokens, "⏳"),
+    completed: firstDate(syntax.tokens, "✅"),
+    cancelled: firstDate(syntax.tokens, "❌"),
     priority,
     tags,
     file,
@@ -73,7 +55,15 @@ export function parseLine(raw: string, file: string, line: number): Task | null 
 export function parseFileContent(content: string, file: string): Task[] {
   const out: Task[] = [];
   const lines = content.split("\n");
+  let fence: "`" | "~" | null = null;
   for (let i = 0; i < lines.length; i++) {
+    const marker = /^\s*(`{3,}|~{3,})/.exec(lines[i])?.[1]?.[0] as "`" | "~" | undefined;
+    if (marker) {
+      if (fence === marker) fence = null;
+      else if (fence === null) fence = marker;
+      continue;
+    }
+    if (fence !== null) continue;
     const task = parseLine(lines[i], file, i);
     if (task) out.push(task);
   }

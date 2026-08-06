@@ -1,9 +1,10 @@
 import { ItemView, WorkspaceLeaf, TFile, setIcon, Notice } from "obsidian";
+import { displayTaskText } from "../core/taskText";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
 import { TaskPanel, PanelContext } from "./TaskPanel";
 import { PRIORITY_LABELS } from "../core/query";
-import { Task, Settings, TaskStatus } from "../types";
+import { Task, Settings, TaskStatus, TaskPanelState } from "../types";
 
 export const VIEW_TYPE_KAIROS = "kairos-view";
 
@@ -97,6 +98,10 @@ export class AttivitaView extends ItemView {
     this.unsubscribeIndex = null;
   }
 
+  applyPanelState(state: TaskPanelState): void {
+    this.panel?.applyState(state);
+  }
+
   private persistState(): void {
     if (!this.panel) return;
     this.getSettings().panelState = this.panel.getState();
@@ -138,7 +143,7 @@ export class AttivitaView extends ItemView {
       this.renderInspector();
     };
 
-    inspector.createDiv({ cls: "kairos-inspector-task", text: task.text || "(senza testo)" });
+    inspector.createDiv({ cls: "kairos-inspector-task", text: displayTaskText(task.text) || "(senza testo)" });
     this.renderInspectorRow(inspector, "Stato", STATUS_LABEL[task.status]);
     this.renderInspectorRow(inspector, "Data", task.due ?? "Senza data");
     this.renderInspectorRow(inspector, "Priorità", task.priority === null ? "—" : PRIORITY_LABELS[task.priority]);

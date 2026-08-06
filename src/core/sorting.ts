@@ -1,4 +1,5 @@
 import { Task, Priority } from "../types";
+import { effectiveDate } from "./dates";
 
 export type SortKey = "due" | "priority" | "note";
 
@@ -11,10 +12,12 @@ export function priorityRank(priority: Priority | null): number {
 }
 
 function cmpDue(a: Task, b: Task): number {
-  if (a.due === b.due) return 0;
-  if (a.due === null) return 1;
-  if (b.due === null) return -1;
-  return a.due.localeCompare(b.due);
+  const dateA = effectiveDate(a);
+  const dateB = effectiveDate(b);
+  if (dateA === dateB) return 0;
+  if (dateA === null) return 1;
+  if (dateB === null) return -1;
+  return dateA.localeCompare(dateB);
 }
 
 function cmpNote(a: Task, b: Task): number {

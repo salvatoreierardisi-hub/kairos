@@ -1,4 +1,4 @@
-import { App, Menu, Notice, setIcon, TFile } from "obsidian";
+import { App, Menu, Notice, setIcon, setTooltip, TFile } from "obsidian";
 import type { MenuItem } from "obsidian";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
@@ -16,6 +16,8 @@ import { PRIORITY_EMOJI } from "../core/parser";
 import { Task, Settings, TaskStatus, Priority, TaskPanelState, SavedView, PanelView } from "../types";
 import { pickNote } from "./NotePicker";
 import { promptText } from "./PromptModal";
+import { displayTaskText } from "../core/taskText";
+import { effectiveDate } from "../core/dates";
 
 /** `MenuItem.setSubmenu()` esiste a runtime (Obsidian ≥1.4) ma non è tipizzato. */
 function submenuOf(item: MenuItem): Menu {
@@ -47,6 +49,7 @@ const SORT_OPTIONS: [SortKey, string][] = [
 ];
 
 const GROUP_OPTIONS: [GroupKey, string][] = [
+  ["agenda", "Agenda"],
   ["note", "Nota"],
   ["date", "Data"],
   ["priority", "Priorità"],
@@ -54,13 +57,6 @@ const GROUP_OPTIONS: [GroupKey, string][] = [
   ["folder", "Cartella"],
   ["none", "Niente"],
 ];
-
-const STATUS_ICON: Record<TaskStatus, string> = {
-  open: "circle",
-  inProgress: "circle-dot",
-  done: "check-circle",
-  cancelled: "x-circle",
-};
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   open: "Da fare",
@@ -171,6 +167,7 @@ export class TaskPanel {
   private resultsEl: HTMLElement | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private lastGroupKeys: string[] = [];
+  private agendaInitialized = false;
 
   // Cursore tastiera + selezione multipla sulle righe attualmente visibili.
   private cursor = -1;
@@ -181,6 +178,8 @@ export class TaskPanel {
   private keyHandler: ((event: KeyboardEvent) => void) | null = null;
   private unsubscribeIndex: (() => void) | null = null;
   private searchInputEl: HTMLInputElement | null = null;
+  private dateInputEl: HTMLInputElement | null = null;
+  private pendingDatePick: { targets: Task[]; clearSelection: boolean } | null = null;
 
   constructor(
     container: HTMLElement,
@@ -218,6 +217,9 @@ export class TaskPanel {
     this.keyHandler = null;
     if (this.unsubscribeIndex) this.unsubscribeIndex();
     this.unsubscribeIndex = null;
+    this.searchInputEl = null;
+    this.dateInputEl = null;
+    this.pendingDatePick = null;
   }
 
   getState(): TaskPanelState {
@@ -228,6 +230,18 @@ export class TaskPanel {
       group: this.state.group,
       collapsed: [...this.collapsed],
     };
+  }
+
+  applyState(next: TaskPanelState): void {
+    this.state.view = next.view;
+    this.state.filter = { ...structuredClone(DEFAULT_FILTER), ...next.filter };
+    this.state.sort = next.sort;
+    this.state.group = next.group;
+    this.collapsed.clear();
+    for (const key of next.collapsed) this.collapsed.add(key);
+    this.agendaInitialized = false;
+    this.renderFilters();
+    this.renderResults();
   }
 
   // ── Chrome (costruita una volta; l'input di ricerca non viene ricreato) ──
@@ -267,6 +281,18 @@ export class TaskPanel {
     setIcon(overflow, "more-horizontal");
     overflow.setAttribute("aria-label", "Altro");
     overflow.addEventListener("click", (event) => this.openOverflowMenu(event));
+
+    this.dateInputEl = actions.createEl("input", {
+      cls: "kairos-panel-date-input",
+      attr: { type: "date", "aria-label": "Scegli data" },
+    });
+    this.dateInputEl.addEventListener("change", () => {
+      const pending = this.pendingDatePick;
+      const due = this.dateInputEl?.value;
+      this.pendingDatePick = null;
+      if (!pending || !due) return;
+      this.applyDateChoice(pending.targets, due, pending.clearSelection);
+    });
 
     this.filtersEl = root.createDiv({ cls: "kairos-panel__filters" });
     this.bulkBarEl = root.createDiv({ cls: "kairos-bulkbar is-hidden" });
@@ -546,10 +572,10 @@ export class TaskPanel {
     const effectiveFilter: TaskFilter = {
       ...this.state.filter,
       due: dueForView(this.state.view),
-      exactDay: null,
+      exactDay: this.state.filter.exactDay,
     };
     const effectiveGroup: GroupKey =
-      this.state.view === "inbox" || this.state.view === "today" ? "none" : this.state.group;
+      this.state.view === "inbox" ? "none" : this.state.view === "today" ? "note" : this.state.group;
 
     const groups = groupTasks(
       sourceTasks,
@@ -557,8 +583,16 @@ export class TaskPanel {
       this.state.sort,
       effectiveGroup,
       today,
-      { inboxPath: settings.inboxPath },
+      { inboxPath: settings.inboxPath, agendaHorizonDays: settings.agendaHorizonDays },
     );
+    if (effectiveGroup === "agenda" && !this.agendaInitialized) {
+      for (const group of groups) {
+        if (group.key === "zy-later" || group.key === "zz-none") this.collapsed.add(group.key);
+      }
+      this.agendaInitialized = true;
+    } else if (effectiveGroup !== "agenda") {
+      this.agendaInitialized = false;
+    }
     this.lastGroupKeys = groups.filter((group) => group.label !== "").map((group) => group.key);
     this.taskByKey = new Map();
     for (const group of groups) for (const task of group.tasks) this.taskByKey.set(taskKey(task), task);
@@ -595,8 +629,11 @@ export class TaskPanel {
       }
 
       const collapsed = this.collapsed.has(group.key);
+      const semanticClass = group.key === "00-overdue"
+        ? " kairos-group--overdue"
+        : group.key === `10-${today}` ? " kairos-group--today" : "";
       const section = results.createDiv({
-        cls: `kairos-group${isInbox ? " kairos-group--inbox" : ""}${collapsed ? " is-collapsed" : ""}`,
+        cls: `kairos-group${isInbox ? " kairos-group--inbox" : ""}${semanticClass}${collapsed ? " is-collapsed" : ""}`,
       });
 
       const head = section.createDiv({
@@ -714,23 +751,40 @@ export class TaskPanel {
     row.toggleClass("is-selected", selected);
 
     const check = row.createSpan({ cls: "kairos-check" });
+    check.createSpan({ cls: `kairos-checkmark kairos-checkmark--${task.status}` });
+    check.setAttribute("role", "button");
+    check.setAttribute("tabindex", "0");
     check.setAttribute("aria-label", "Cambia stato");
-    setIcon(check, STATUS_ICON[task.status]);
-    check.addEventListener("click", (event) => {
+    const toggleStatus = (event: Event) => {
       event.stopPropagation();
       this.runTaskAction(() => this.ctx.writer.toggleTask(task));
+    };
+    check.addEventListener("click", toggleStatus);
+    check.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleStatus(event);
     });
     check.addEventListener("contextmenu", (event) => this.showRowMenu(event, task, today));
 
     const main = row.createDiv({ cls: "kairos-task-main" });
     const line = main.createDiv({ cls: "kairos-task-line" });
-    line.createSpan({ cls: "kairos-task-text", text: task.text || "(senza testo)" });
-    if (task.due) {
-      const overdue = task.due < today && (task.status === "open" || task.status === "inProgress");
-      line.createSpan({
-        cls: `kairos-pill kairos-due kairos-due-inline${overdue ? " kairos-due-overdue" : ""}`,
-        text: formatDueBadgeLabel(task.due, today),
+    const taskTitle = displayTaskText(task.text) || "(senza testo)";
+    const taskDate = effectiveDate(task);
+    if (taskDate) {
+      const lastSpace = taskTitle.lastIndexOf(" ");
+      if (lastSpace >= 0) {
+        line.createSpan({ cls: "kairos-task-text", text: taskTitle.slice(0, lastSpace + 1) });
+      }
+      const tail = line.createSpan({ cls: "kairos-task-tail" });
+      tail.createSpan({ cls: "kairos-task-text", text: taskTitle.slice(lastSpace + 1) });
+      const overdue = taskDate < today && (task.status === "open" || task.status === "inProgress");
+      tail.createSpan({
+        cls: `kairos-pill kairos-due kairos-due-inline${overdue ? " kairos-due-overdue" : ""}${task.due ? "" : " is-scheduled"}`,
+        text: formatDueBadgeLabel(taskDate, today),
       });
+    } else {
+      line.createSpan({ cls: "kairos-task-text", text: taskTitle });
     }
     if (task.priority !== null) {
       line.createSpan({ cls: "kairos-badge", text: PRIORITY_EMOJI_BY[task.priority] });
@@ -756,6 +810,33 @@ export class TaskPanel {
         openDetail(event);
       });
     }
+    if (taskDate) {
+      const overdue = taskDate < today && (task.status === "open" || task.status === "inProgress");
+      const exactDue = metaRow.createSpan({
+        cls: `kairos-exact-due${overdue ? " kairos-exact-due--overdue" : ""}${task.due ? "" : " is-scheduled"}`,
+        attr: { role: "button", tabindex: "0", "aria-label": `${taskDate}. Rischedula task` },
+      });
+      exactDue.createSpan({ cls: "kairos-exact-due__dot" });
+      exactDue.createSpan({ cls: "kairos-exact-due__label", text: taskDate });
+      if (!this.isMobile()) {
+        setTooltip(exactDue, "Due click per rischedulare", { placement: "top" });
+      }
+      exactDue.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (this.isMobile()) this.openTaskRescheduleMenu(exactDue, task, today, event);
+      });
+      exactDue.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!this.isMobile()) this.openTaskRescheduleMenu(exactDue, task, today, event);
+      });
+      exactDue.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.openTaskRescheduleMenu(exactDue, task, today);
+      });
+    }
     if (showNote) {
       const source = metaRow.createSpan({ cls: "kairos-source", text: noteTitle(task.file) });
       source.addEventListener("click", (event) => {
@@ -764,12 +845,21 @@ export class TaskPanel {
       });
     }
 
-    const more = row.createEl("button", { cls: "kairos-row-more" });
+    const more = row.createSpan({ cls: "kairos-row-more" });
     setIcon(more, "more-horizontal");
+    more.setAttribute("role", "button");
+    more.setAttribute("tabindex", "0");
     more.setAttribute("aria-label", "Azioni");
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       this.showRowMenu(event, task, today);
+    });
+    more.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = more.getBoundingClientRect();
+      this.showRowMenu(new MouseEvent("click", { clientX: rect.left, clientY: rect.bottom }), task, today);
     });
 
     row.addEventListener("contextmenu", (event) => this.showRowMenu(event, task, today));
@@ -856,27 +946,7 @@ export class TaskPanel {
     });
 
     menu.addSeparator();
-    menu.addItem((item) =>
-      item.setTitle("Oggi").setIcon("calendar").onClick(() => this.runTaskAction(() => this.ctx.writer.setDue(task, today))),
-    );
-    menu.addItem((item) =>
-      item.setTitle("Domani").setIcon("calendar").onClick(() =>
-        this.runTaskAction(() => this.ctx.writer.setDue(task, addDays(today, 1))),
-      ),
-    );
-    menu.addItem((item) =>
-      item
-        .setTitle("Prossima settimana")
-        .setIcon("calendar")
-        .onClick(() => this.runTaskAction(() => this.ctx.writer.setDue(task, addDays(today, 7)))),
-    );
-    if (task.due !== null) {
-      menu.addItem((item) =>
-        item.setTitle("Rimuovi data").setIcon("calendar-x").onClick(() =>
-          this.runTaskAction(() => this.ctx.writer.setDue(task, null)),
-        ),
-      );
-    }
+    this.addRescheduleItems(menu, [task], today, false);
 
     menu.addSeparator();
     menu.addItem((item) =>
@@ -914,6 +984,10 @@ export class TaskPanel {
       !document.body.classList.contains("is-mobile") &&
       !window.matchMedia("(max-width: 900px)").matches
     );
+  }
+
+  private isMobile(): boolean {
+    return document.body.classList.contains("is-mobile");
   }
 
   // ── Tastiera + selezione multipla ───────────────────────────────────
@@ -1077,35 +1151,88 @@ export class TaskPanel {
     const targets = this.targets();
     const today = todayString();
     const menu = new Menu();
-    menu.addItem((item) =>
-      item.setTitle("Oggi").setIcon("calendar").onClick(() =>
-        this.runTaskAction(() => this.applyDue(targets, today)),
-      ),
-    );
-    menu.addItem((item) =>
-      item
-        .setTitle("Domani")
-        .setIcon("calendar")
-        .onClick(() => this.runTaskAction(() => this.applyDue(targets, addDays(today, 1)))),
-    );
-    menu.addItem((item) =>
-      item
-        .setTitle("Tra 7 giorni")
-        .setIcon("calendar")
-        .onClick(() => this.runTaskAction(() => this.applyDue(targets, addDays(today, 7)))),
-    );
-    menu.addSeparator();
-    menu.addItem((item) =>
-      item.setTitle("Rimuovi data").setIcon("calendar-x").onClick(() =>
-        this.runTaskAction(() => this.applyDue(targets, null)),
-      ),
-    );
+    this.addRescheduleItems(menu, targets, today, true);
     menu.showAtMouseEvent(event);
   }
 
-  private async applyDue(targets: Task[], due: string | null): Promise<void> {
+  private openTaskRescheduleMenu(
+    anchor: HTMLElement,
+    task: Task,
+    today: string,
+    event?: MouseEvent,
+  ): void {
+    const menu = new Menu();
+    this.addRescheduleItems(menu, [task], today, false);
+    if (event) {
+      menu.showAtMouseEvent(event);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom, width: rect.width }, anchor.ownerDocument);
+  }
+
+  private addRescheduleItems(
+    menu: Menu,
+    targets: Task[],
+    today: string,
+    clearSelection: boolean,
+  ): void {
+    const firstDate = targets[0] ? effectiveDate(targets[0]) : null;
+    const currentDue = targets.length > 0 && targets.every((task) => effectiveDate(task) === firstDate)
+      ? firstDate
+      : undefined;
+    const choices: [string, string][] = [
+      ["Oggi", today],
+      ["Domani", addDays(today, 1)],
+      ["Prossima settimana", addDays(today, 7)],
+    ];
+    for (const [label, due] of choices) {
+      menu.addItem((item) =>
+        item
+          .setTitle(label)
+          .setIcon("calendar")
+          .setChecked(currentDue === due)
+          .onClick(() => this.applyDateChoice(targets, due, clearSelection)),
+      );
+    }
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle("Scegli data...")
+        .setIcon("calendar-plus")
+        .onClick(() => this.openDatePicker(targets, currentDue ?? null, clearSelection)),
+    );
+    if (targets.some((task) => task.due !== null)) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Rimuovi data")
+          .setIcon("calendar-x")
+          .onClick(() => this.applyDateChoice(targets, null, clearSelection)),
+      );
+    }
+  }
+
+  private openDatePicker(targets: Task[], currentDue: string | null, clearSelection: boolean): void {
+    if (!this.dateInputEl) return;
+    this.pendingDatePick = { targets, clearSelection };
+    this.dateInputEl.value = currentDue ?? "";
+    this.dateInputEl.focus();
+    const picker = this.dateInputEl as HTMLInputElement & { showPicker?: () => void };
+    if (picker.showPicker) picker.showPicker();
+    else picker.click();
+  }
+
+  private applyDateChoice(targets: Task[], due: string | null, clearSelection: boolean): void {
+    if (targets.length === 1 && !clearSelection) {
+      this.rescheduleWithUndo(targets[0]!, due);
+      return;
+    }
+    this.runTaskAction(() => this.applyDue(targets, due, clearSelection));
+  }
+
+  private async applyDue(targets: Task[], due: string | null, clearSelection = false): Promise<void> {
     for (const task of targets) await this.ctx.writer.setDue(task, due);
-    this.clearSelection();
+    if (clearSelection) this.clearSelection();
   }
 
   private openMoveMenu(): void {
@@ -1138,6 +1265,24 @@ export class TaskPanel {
 
   private runTaskAction(action: () => Promise<void>): void {
     void action().catch((error) => {
+      new Notice(`Kairos: impossibile aggiornare il task — ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  private rescheduleWithUndo(task: Task, due: string | null): void {
+    void this.ctx.writer.setDueWithUndo(task, due).then((undo) => {
+      const fragment = document.createDocumentFragment();
+      fragment.append("Kairos: data aggiornata. ");
+      const button = fragment.createEl("button", { text: "Annulla", cls: "kairos-notice-undo" });
+      const notice = new Notice(fragment, 10_000);
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        void undo().then(() => notice.hide()).catch((error) => {
+          notice.hide();
+          new Notice(`Kairos: impossibile annullare — ${error instanceof Error ? error.message : String(error)}`);
+        });
+      });
+    }).catch((error) => {
       new Notice(`Kairos: impossibile aggiornare il task — ${error instanceof Error ? error.message : String(error)}`);
     });
   }
