@@ -111,8 +111,6 @@ lo stato precedente fino al successivo aggiornamento valido.
   checkbox, metadati e stati interattivi.
 - Test mirati per eventuali helper puri estratti durante l'implementazione; nessun test
   deve dipendere dal DOM interno di Obsidian.
-- `.kairos-private/docs/STATO.md` e `.kairos-private/docs/SESSION_LOG.md`: aggiornamento
-  tecnico al termine dell'implementazione verificata.
 
 ## Verifica
 
