@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { addTagLine, setDueLine, setPriorityLine, setScheduledLine, setTaskTextLine } from "../src/core/updateLine";
+import {
+  addDetailIdentityLine,
+  addTagLine,
+  setDueLine,
+  setPriorityLine,
+  setScheduledLine,
+  setTaskTextLine,
+} from "../src/core/updateLine";
 
 describe("setTaskTextLine", () => {
   it("modifica il testo preservando tutti i metadati", () => {
@@ -82,6 +89,31 @@ describe("addTagLine", () => {
   it("inserisce il tag prima del marcatore di completamento", () => {
     expect(addTagLine("- [x] Fatto ✅ 2026-07-05", "area/finanze"))
       .toBe("- [x] Fatto #area/finanze ✅ 2026-07-05");
+  });
+});
+
+describe("addDetailIdentityLine", () => {
+  it("aggiunge Dettagli e block ID preservando i metadati", () => {
+    expect(addDetailIdentityLine(
+      "- [/] Task 🔼 ⏳ 2026-08-09 📅 2026-08-10 #progetto/kairos",
+      "_inbox/Dettagli/Task.md",
+      "kairos-a1b2",
+    )).toBe(
+      "- [/] Task 🔼 ⏳ 2026-08-09 📅 2026-08-10 #progetto/kairos [[_inbox/Dettagli/Task|Dettagli]] ^kairos-a1b2",
+    );
+  });
+
+  it("riusa identità già presenti senza duplicarle", () => {
+    const line = "- [ ] Task [[Dettagli/Esistente|Dettagli]] ^kairos-esistente";
+    expect(addDetailIdentityLine(line, "Dettagli/Nuovo.md", "kairos-nuovo")).toBe(line);
+  });
+
+  it("riusa un block ID preesistente aggiungendo soltanto il link", () => {
+    expect(addDetailIdentityLine(
+      "- [ ] Task ^kairos-esistente",
+      "Dettagli/Task.md",
+      "kairos-nuovo",
+    )).toBe("- [ ] Task [[Dettagli/Task|Dettagli]] ^kairos-esistente");
   });
 });
 

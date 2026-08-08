@@ -223,6 +223,28 @@ export function addTagField(line: string, tag: string): string {
   return serializeTaskSyntax({ ...task, tokens });
 }
 
+/** Aggiunge l'identità Dettagli senza sostituire collegamenti o block ID esistenti. */
+export function addDetailIdentityField(line: string, target: string, blockId: string): string {
+  const task = parseTaskSyntax(line);
+  const normalizedTarget = target.trim().replace(/\.md$/i, "");
+  const normalizedBlockId = blockId.trim().replace(/^\^/, "");
+  if (!task || normalizedTarget === "" || !/^[A-Za-z0-9-]+$/.test(normalizedBlockId)) return line;
+
+  let tokens = task.tokens;
+  if (!tokens.some((token) => token.kind === "detail")) {
+    const detail: BodyToken = {
+      kind: "detail",
+      raw: ` [[${normalizedTarget}|Dettagli]]`,
+      target: normalizedTarget,
+    };
+    tokens = insertBeforeTrailing(tokens, detail, ["blockid"]);
+  }
+  if (!tokens.some((token) => token.kind === "blockid")) {
+    tokens = [...tokens, { kind: "blockid", raw: ` ^${normalizedBlockId}`, value: normalizedBlockId }];
+  }
+  return serializeTaskSyntax({ ...task, tokens });
+}
+
 export function transitionStatusField(line: string, status: TaskStatus, today: string): string {
   const task = parseTaskSyntax(line);
   if (!task || task.status === "unknown") return line;

@@ -277,13 +277,19 @@ export default class KairosPlugin extends Plugin {
       this.app,
       async (input) => {
         try {
-          await this.writer.updateTask(task, {
+          const update = {
             text: input.text,
             due: input.due,
             scheduled: input.scheduled,
             priority: input.priority,
             status: input.status,
-          });
+          };
+          if (input.createMode === "create") {
+            await this.writer.updateTask(task, update);
+            return;
+          }
+          const detailFile = await this.writer.updateTaskWithDetail(task, update);
+          await this.app.workspace.getLeaf("tab").openFile(detailFile);
         } catch (err) {
           new Notice("Kairos: impossibile aggiornare il task — " + (err instanceof Error ? err.message : String(err)));
           throw err;

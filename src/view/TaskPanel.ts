@@ -795,7 +795,10 @@ export class TaskPanel {
     if (project) {
       metaRow.createSpan({ cls: "kairos-pill kairos-tag", text: project.split("/").pop() ?? project });
     }
-    if (task.detailPath) {
+    const detailFile = task.detailPath
+      ? this.ctx.app.vault.getAbstractFileByPath(task.detailPath)
+      : null;
+    if (task.detailPath && detailFile instanceof TFile) {
       const detail = metaRow.createSpan({ cls: "kairos-pill kairos-detail-link", text: "Dettagli" });
       detail.setAttribute("role", "link");
       detail.setAttribute("tabindex", "0");
