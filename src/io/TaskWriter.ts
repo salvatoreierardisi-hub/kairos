@@ -4,7 +4,7 @@ import { formatTaskLine } from "../core/format";
 import { createInboxContent, insertTaskAtTop } from "../core/dailyInsert";
 import { locateTaskLine, locateTaskLines } from "../core/taskLine";
 import { setStatusLine, toggleLine } from "../core/toggleLine";
-import { addTagLine, setDueLine, setPriorityLine, setScheduledLine, setTaskTextLine } from "../core/updateLine";
+import { addDetailIdentityLine, addTagLine, setDueLine, setPriorityLine, setScheduledLine, setTaskTextLine } from "../core/updateLine";
 import { detailFolder, detailNoteContent, detailTitle } from "../core/taskDetail";
 import { completeRecurring } from "../core/recurrence";
 import { isValidDay } from "../core/dates";
@@ -19,6 +19,14 @@ export interface CreatedTask {
   line: number;
   detailFile?: TFile;
 }
+
+type TaskUpdate = {
+  text: string;
+  due: string | null;
+  scheduled?: string | null;
+  priority: Priority | null;
+  status: TaskStatus;
+};
 
 export class TaskWriter {
   constructor(
@@ -110,7 +118,7 @@ export class TaskWriter {
 
   async updateTask(
     task: Task,
-    update: { text: string; due: string | null; scheduled?: string | null; priority: Priority | null; status: TaskStatus },
+    update: TaskUpdate,
   ): Promise<void> {
     if (update.text.trim() === "") throw new Error("Il testo del task è vuoto");
     this.assertDate(update.due);
@@ -122,6 +130,47 @@ export class TaskWriter {
     await this.updateTaskLine(task, (line) => {
       return this.applyTaskEdits(line, task, update, update.status);
     });
+  }
+
+  async updateTaskWithDetail(task: Task, update: TaskUpdate): Promise<TFile> {
+    if (task.detailPath) {
+      const existing = this.app.vault.getAbstractFileByPath(normalizePath(task.detailPath));
+      if (existing instanceof TFile) {
+        await this.updateTask(task, update);
+        return existing;
+      }
+      if (existing) throw new Error(`Il percorso Dettagli non è un file: ${task.detailPath}`);
+    }
+
+    if (update.text.trim() === "") throw new Error("Il testo del task è vuoto");
+    this.assertDate(update.due);
+    this.assertDate(update.scheduled ?? null);
+    const title = detailTitle(update.text);
+    const detailPath = task.detailPath
+      ? normalizePath(task.detailPath)
+      : await this.availableDetailPath(title);
+    const blockId = task.blockId ?? this.newBlockId();
+    const detailFile = await this.createFile(
+      detailPath,
+      detailNoteContent(title, task.file, blockId),
+    );
+
+    try {
+      const edit = (line: string, status: TaskStatus): string => addDetailIdentityLine(
+        this.applyTaskEdits(line, task, update, status),
+        detailPath,
+        blockId,
+      );
+      if (update.status === "done" && task.status !== "done" && task.source.includes("🔁")) {
+        await this.completeRecurringTask(task, (line) => edit(line, task.status));
+      } else {
+        await this.updateTaskLine(task, (line) => edit(line, update.status));
+      }
+      return detailFile;
+    } catch (error) {
+      await this.app.fileManager.trashFile(detailFile).catch(() => undefined);
+      throw error;
+    }
   }
 
   async deleteTask(task: Task): Promise<void> {
@@ -175,7 +224,7 @@ export class TaskWriter {
   private applyTaskEdits(
     line: string,
     task: Task,
-    update: { text: string; due: string | null; scheduled?: string | null; priority: Priority | null },
+    update: Pick<TaskUpdate, "text" | "due" | "scheduled" | "priority">,
     status: TaskStatus,
   ): string {
     let next = setTaskTextLine(line, update.text);

@@ -227,26 +227,28 @@ export class QuickAddModal extends Modal {
       attr: { type: "button" },
     });
     this.createButton.addEventListener("click", () => void this.submit("create"));
-    if (!this.task) {
-      this.createMenuButton = createGroup.createEl("button", {
-        cls: "kairos-quickadd-create-menu",
-        attr: { type: "button", "aria-label": "Altre modalità di creazione" },
-      });
-      this.createMenuButton.createSpan({ cls: "kairos-quickadd-create-chevron" });
-      this.createMenuButton.addEventListener("click", (event) => this.openCreateMenu(event));
-    }
+    this.createMenuButton = createGroup.createEl("button", {
+      cls: "kairos-quickadd-create-menu",
+      attr: {
+        type: "button",
+        "aria-label": this.task ? "Altre modalità di salvataggio" : "Altre modalità di creazione",
+      },
+    });
+    this.createMenuButton.createSpan({ cls: "kairos-quickadd-create-chevron" });
+    this.createMenuButton.addEventListener("click", (event) => this.openCreateMenu(event));
     this.refreshCreateButton();
   }
 
   private openCreateMenu(event: MouseEvent): void {
     event.preventDefault();
     const menu = new Menu();
+    const verb = this.task ? "Salva" : "Crea";
     menu.addItem((item) =>
-      item.setTitle("Crea").setIcon("plus").onClick(() => void this.submit("create")),
+      item.setTitle(verb).setIcon(this.task ? "save" : "plus").onClick(() => void this.submit("create")),
     );
     menu.addItem((item) =>
       item
-        .setTitle("Crea e apri")
+        .setTitle(`${verb} e apri`)
         .setIcon("external-link")
         .onClick(() => void this.submit("createAndOpen")),
     );
@@ -479,7 +481,7 @@ export class QuickAddModal extends Modal {
         priority: this.priority,
         status: this.status,
         targetPath: this.targetPath,
-        createMode: this.task ? "create" : createMode,
+        createMode,
       });
       this.close();
     } catch {

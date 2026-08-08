@@ -1,5 +1,6 @@
 import { Priority } from "../types";
 import {
+  addDetailIdentityField,
   addTagField,
   rewriteDateField,
   rewriteDescriptionField,
@@ -21,6 +22,10 @@ export function setScheduledLine(line: string, scheduled: string | null): string
 
 export function addTagLine(line: string, tag: string): string {
   return addTagField(line, tag);
+}
+
+export function addDetailIdentityLine(line: string, detailPath: string, blockId: string): string {
+  return addDetailIdentityField(line, detailPath, blockId);
 }
 
 export function setPriorityLine(line: string, priority: Priority | null): string {
