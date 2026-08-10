@@ -50,7 +50,9 @@ describe("insertTaskAtTop", () => {
 
 describe("createInboxContent", () => {
   it("crea Inbox strutturata con il primo task", () => {
-    expect(createInboxContent("- [ ] Primo")).toBe("# Inbox\n\n## Task\n- [ ] Primo\n");
+    expect(createInboxContent("- [ ] Primo")).toBe(
+      "# Inbox\n\n## Task aperti\n- [ ] Primo\n\n## Task in corso\n\n## Task completati\n\n## Task annullati\n",
+    );
   });
 });
 

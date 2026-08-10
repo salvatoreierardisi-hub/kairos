@@ -16,8 +16,8 @@ import { PRIORITY_EMOJI } from "../core/parser";
 import { Task, Settings, TaskStatus, Priority, TaskPanelState, SavedView, PanelView } from "../types";
 import { pickNote } from "./NotePicker";
 import { promptText } from "./PromptModal";
-import { displayTaskText } from "../core/taskText";
 import { effectiveDate } from "../core/dates";
+import { openTaskReference, renderTaskTextWithReferences } from "./TaskReferenceView";
 
 /** `MenuItem.setSubmenu()` esiste a runtime (Obsidian ≥1.4) ma non è tipizzato. */
 function submenuOf(item: MenuItem): Menu {
@@ -769,22 +769,21 @@ export class TaskPanel {
 
     const main = row.createDiv({ cls: "kairos-task-main" });
     const line = main.createDiv({ cls: "kairos-task-line" });
-    const taskTitle = displayTaskText(task.text) || "(senza testo)";
+    const taskText = line.createSpan({ cls: "kairos-task-text" });
+    if (task.text.trim()) {
+      renderTaskTextWithReferences(taskText, task.text, (reference) => {
+        void openTaskReference(this.ctx.app, task.file, reference);
+      });
+    } else {
+      taskText.setText("(senza testo)");
+    }
     const taskDate = effectiveDate(task);
     if (taskDate) {
-      const lastSpace = taskTitle.lastIndexOf(" ");
-      if (lastSpace >= 0) {
-        line.createSpan({ cls: "kairos-task-text", text: taskTitle.slice(0, lastSpace + 1) });
-      }
-      const tail = line.createSpan({ cls: "kairos-task-tail" });
-      tail.createSpan({ cls: "kairos-task-text", text: taskTitle.slice(lastSpace + 1) });
       const overdue = taskDate < today && (task.status === "open" || task.status === "inProgress");
-      tail.createSpan({
+      line.createSpan({
         cls: `kairos-pill kairos-due kairos-due-inline${overdue ? " kairos-due-overdue" : ""}${task.due ? "" : " is-scheduled"}`,
         text: formatDueBadgeLabel(taskDate, today),
       });
-    } else {
-      line.createSpan({ cls: "kairos-task-text", text: taskTitle });
     }
     if (task.priority !== null) {
       line.createSpan({ cls: "kairos-badge", text: PRIORITY_EMOJI_BY[task.priority] });

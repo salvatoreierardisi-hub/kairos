@@ -8,6 +8,8 @@ import { addDetailIdentityLine, addTagLine, setDueLine, setPriorityLine, setSche
 import { detailFolder, detailNoteContent, detailTitle } from "../core/taskDetail";
 import { completeRecurring } from "../core/recurrence";
 import { isValidDay } from "../core/dates";
+import { InboxArchive } from "./InboxArchive";
+import { organizeInboxContent } from "../core/inboxSections";
 
 function markdownPath(path: string): string {
   const normalized = normalizePath(path);
@@ -32,6 +34,7 @@ export class TaskWriter {
   constructor(
     private app: App,
     private getSettings: () => Settings,
+    private archive?: InboxArchive,
   ) {}
 
   async addTask(input: NewTaskInput): Promise<CreatedTask> {
@@ -74,7 +77,12 @@ export class TaskWriter {
       await this.completeRecurringTask(task);
       return;
     }
-    await this.updateTaskLine(task, (line) => toggleLine(line, task.status, this.todayString()));
+    const next = toggleLine(task.source, task.status, this.todayString());
+    if (task.status === "done" && this.archive?.isArchivedTask(task)) {
+      await this.archive.reopen(task, next);
+      return;
+    }
+    await this.updateTaskLine(task, (line) => toggleLine(line, task.status, this.todayString()), true);
   }
 
   async setStatus(task: Task, status: TaskStatus): Promise<void> {
@@ -82,7 +90,15 @@ export class TaskWriter {
       await this.completeRecurringTask(task);
       return;
     }
-    await this.updateTaskLine(task, (line) => setStatusLine(line, status, this.todayString()));
+    if ((status === "open" || status === "inProgress") && this.archive?.isArchivedTask(task)) {
+      await this.archive.reopen(task, setStatusLine(task.source, status, this.todayString()));
+      return;
+    }
+    await this.updateTaskLine(
+      task,
+      (line) => setStatusLine(line, status, this.todayString()),
+      status !== task.status,
+    );
   }
 
   async setDue(task: Task, due: string | null): Promise<void> {
@@ -127,9 +143,13 @@ export class TaskWriter {
       await this.completeRecurringTask(task, (line) => this.applyTaskEdits(line, task, update, task.status));
       return;
     }
+    if ((update.status === "open" || update.status === "inProgress") && this.archive?.isArchivedTask(task)) {
+      await this.archive.reopen(task, this.applyTaskEdits(task.source, task, update, update.status));
+      return;
+    }
     await this.updateTaskLine(task, (line) => {
       return this.applyTaskEdits(line, task, update, update.status);
-    });
+    }, update.status !== task.status);
   }
 
   async updateTaskWithDetail(task: Task, update: TaskUpdate): Promise<TFile> {
@@ -150,9 +170,11 @@ export class TaskWriter {
       ? normalizePath(task.detailPath)
       : await this.availableDetailPath(title);
     const blockId = task.blockId ?? this.newBlockId();
+    const reopensArchived = (update.status === "open" || update.status === "inProgress") &&
+      this.archive?.isArchivedTask(task) === true;
     const detailFile = await this.createFile(
       detailPath,
-      detailNoteContent(title, task.file, blockId),
+      detailNoteContent(title, reopensArchived ? markdownPath(this.getSettings().inboxPath) : task.file, blockId),
     );
 
     try {
@@ -163,8 +185,10 @@ export class TaskWriter {
       );
       if (update.status === "done" && task.status !== "done" && task.source.includes("🔁")) {
         await this.completeRecurringTask(task, (line) => edit(line, task.status));
+      } else if (reopensArchived) {
+        await this.archive!.reopen(task, edit(task.source, update.status));
       } else {
-        await this.updateTaskLine(task, (line) => edit(line, update.status));
+        await this.updateTaskLine(task, (line) => edit(line, update.status), update.status !== task.status);
       }
       return detailFile;
     } catch (error) {
@@ -212,13 +236,33 @@ export class TaskWriter {
     await this.app.vault.modify(src, latestLines.join("\n"));
   }
 
-  private async updateTaskLine(task: Task, update: (line: string) => string): Promise<void> {
+  async organizeInbox(): Promise<void> {
+    const path = markdownPath(this.getSettings().inboxPath);
+    const inbox = this.app.vault.getAbstractFileByPath(path);
+    if (inbox === null) return;
+    if (!(inbox instanceof TFile)) throw new Error(`Il percorso Inbox non è un file: ${path}`);
+    const content = await this.app.vault.read(inbox);
+    const organized = organizeInboxContent(content);
+    if (organized !== content) await this.app.vault.modify(inbox, organized);
+  }
+
+  private async updateTaskLine(
+    task: Task,
+    update: (line: string) => string,
+    reorganizeOnStatusChange = false,
+  ): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(task.file);
     if (!(file instanceof TFile)) throw new Error(`Nota sorgente non trovata: ${task.file}`);
     const lines = (await this.app.vault.read(file)).split("\n");
     const index = locateTaskLine(lines, task.line, task.source);
     lines[index] = update(lines[index]);
-    await this.app.vault.modify(file, lines.join("\n"));
+    const updated = lines.join("\n");
+    await this.app.vault.modify(
+      file,
+      reorganizeOnStatusChange && this.isInbox(file.path)
+        ? organizeInboxContent(updated)
+        : updated,
+    );
   }
 
   private applyTaskEdits(
@@ -245,7 +289,8 @@ export class TaskWriter {
       throw new Error("Ricorrenza non supportata o priva di data: nessuna modifica effettuata");
     }
     lines.splice(index, 1, result.nextLine, result.completedLine);
-    await this.app.vault.modify(file, lines.join("\n"));
+    const updated = lines.join("\n");
+    await this.app.vault.modify(file, this.isInbox(file.path) ? organizeInboxContent(updated) : updated);
   }
 
   private async insertInInbox(line: string): Promise<CreatedTask> {
@@ -253,7 +298,7 @@ export class TaskWriter {
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) {
       const content = await this.app.vault.read(existing);
-      const updated = insertTaskAtTop(content, line);
+      const updated = organizeInboxContent(content, line);
       await this.app.vault.modify(existing, updated);
       return { file: existing, line: this.findInsertedLine(updated, line) };
     }
@@ -312,6 +357,10 @@ export class TaskWriter {
     const index = content.split(/\r?\n/).findIndex((candidate) => candidate === line);
     if (index === -1) throw new Error("Task creato ma posizione non trovata");
     return index;
+  }
+
+  private isInbox(path: string): boolean {
+    return normalizePath(path) === markdownPath(this.getSettings().inboxPath);
   }
 
   private todayString(): string {

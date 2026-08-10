@@ -32,6 +32,8 @@ export interface Settings {
   projectPrefix: string;  // es. "progetto/"
   areaPrefix: string;     // es. "area/"
   agendaHorizonDays: number;
+  autoArchiveCompleted: boolean;
+  completedRetentionDays: number;
   excludeFolders: string[];
   savedViews: SavedView[];
   /** Stato del pannello (filtro/ordina/raggruppa/collassati), persistito tra le sessioni. */
@@ -47,6 +49,8 @@ export const DEFAULT_SETTINGS: Settings = {
   projectPrefix: "progetto/",
   areaPrefix: "area/",
   agendaHorizonDays: 14,
+  autoArchiveCompleted: false,
+  completedRetentionDays: 7,
   excludeFolders: [],
   savedViews: [],
 };

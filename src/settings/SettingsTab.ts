@@ -3,11 +3,14 @@ import { Settings } from "../types";
 import { EffectiveDailyConfig } from "../io/DailyNotesConfig";
 import { promptText } from "../view/PromptModal";
 import { normalizeExcludedFolders } from "../core/settings";
+import { archiveFolderPath } from "../core/archive";
 
 export interface SettingsHost extends Plugin {
   settings: Settings;
   saveSettings(): Promise<void>;
   getEffectiveDailySettings(): Promise<EffectiveDailyConfig>;
+  setAutoArchiveEnabled(enabled: boolean): Promise<boolean>;
+  previewInboxArchive(): Promise<void>;
 }
 
 export class KairosSettingTab extends PluginSettingTab {
@@ -82,6 +85,39 @@ export class KairosSettingTab extends PluginSettingTab {
     );
     field("Prefisso tag progetto", "Es. progetto/", "projectPrefix", "progetto/");
     field("Prefisso tag area", "Es. area/", "areaPrefix", "area/");
+
+    new Setting(containerEl).setName("Archivio Inbox").setHeading();
+    new Setting(containerEl)
+      .setName("Archivia automaticamente i task conclusi")
+      .setDesc(
+        `Dopo il periodo di controllo, sposta completati e annullati in ${archiveFolderPath(this.host.settings.inboxPath)}. Le note Dettagli non vengono toccate.`,
+      )
+      .addToggle((toggle) => toggle
+        .setValue(this.host.settings.autoArchiveCompleted)
+        .onChange(async (enabled) => {
+          await this.host.setAutoArchiveEnabled(enabled);
+          this.display();
+        }));
+
+    new Setting(containerEl)
+      .setName("Giorni di permanenza")
+      .setDesc("Giorni durante i quali un task concluso resta ancora nell'Inbox (1–365).")
+      .addText((text) => text
+        .setDisabled(!this.host.settings.autoArchiveCompleted)
+        .setValue(String(this.host.settings.completedRetentionDays))
+        .onChange(async (value) => {
+          const parsed = Number(value);
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) return;
+          this.host.settings.completedRetentionDays = parsed;
+          await this.host.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName("Controlla archivio ora")
+      .setDesc("Mostra l'anteprima e avvia la manutenzione soltanto dopo conferma.")
+      .addButton((button) => button
+        .setButtonText("Analizza")
+        .onClick(() => void this.host.previewInboxArchive()));
 
     new Setting(containerEl)
       .setName("Orizzonte Agenda")

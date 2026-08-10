@@ -12,5 +12,5 @@
     "lib": ["DOM", "ES2020"],
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "benchmarks/**/*.ts"]
 }

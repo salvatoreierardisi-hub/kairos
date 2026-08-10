@@ -3,6 +3,8 @@ import { Priority, Task, TaskStatus } from "../types";
 import { PRIORITY_LABELS } from "../core/query";
 import { pickNote } from "./NotePicker";
 import { parseNaturalDate } from "../core/naturalDate";
+import { addTaskReference, parseTaskReferences, referenceQuery, serializeTaskReferences, TaskReference, updateTaskReferences } from "../core/taskReferences";
+import { ReferenceSuggest } from "./ReferenceSuggest";
 
 const PRIORITY_ICON: Record<Priority, string> = {
   highest: "🔺",
@@ -89,6 +91,9 @@ export class QuickAddModal extends Modal {
   private statusButton: HTMLButtonElement | null = null;
   private createButton: HTMLButtonElement | null = null;
   private createMenuButton: HTMLButtonElement | null = null;
+  private inputEl: HTMLTextAreaElement | null = null;
+  private referenceSuggest: ReferenceSuggest | null = null;
+  private references: TaskReference[] = [];
   private submitting = false;
 
   constructor(
@@ -101,7 +106,9 @@ export class QuickAddModal extends Modal {
   ) {
     super(app);
     if (task) {
-      this.text = task.text;
+      const parsed = parseTaskReferences(task.text);
+      this.text = parsed.text;
+      this.references = parsed.references;
       this.due = task.due;
       this.scheduled = task.scheduled;
       this.priority = task.priority;
@@ -153,18 +160,52 @@ export class QuickAddModal extends Modal {
         rows: "2",
       },
     });
+    this.inputEl = input;
+    this.referenceSuggest = new ReferenceSuggest(inputWrap, this.app, (candidate) => {
+      const query = referenceQuery(this.text, input.selectionStart);
+      if (!query) return;
+      const result = addTaskReference(this.text, this.references, query.start, query.end, {
+        kind: candidate.kind,
+        label: candidate.label,
+        target: candidate.target,
+      });
+      this.text = result.text;
+      this.references = result.references;
+      input.value = this.text;
+      const caret = query.start + candidate.label.length + 1;
+      input.setSelectionRange(caret, caret);
+      this.resizeInput(input);
+      this.refreshCreateButton();
+      input.focus();
+    });
     input.value = this.text;
     input.addEventListener("input", () => {
-      this.text = input.value;
+      const next = input.value;
+      this.references = updateTaskReferences(this.text, next, this.references);
+      this.text = next;
       this.resizeInput(input);
       this.refreshNaturalPreview();
       this.refreshCreateButton();
+      this.refreshReferenceSuggest();
+      window.requestAnimationFrame(() => {
+        if (this.inputEl === input) this.refreshReferenceSuggest();
+      });
     });
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         void this.submit("create");
+        return;
       }
+      this.referenceSuggest?.handleKeydown(event);
+    });
+    input.addEventListener("click", () => this.refreshReferenceSuggest());
+    input.addEventListener("blur", () => {
+      window.setTimeout(() => {
+        if (document.activeElement !== input && !this.referenceSuggest?.isInteracting()) {
+          this.referenceSuggest?.close();
+        }
+      }, 0);
     });
     window.setTimeout(() => {
       this.resizeInput(input);
@@ -467,6 +508,16 @@ export class QuickAddModal extends Modal {
     input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
   }
 
+  private refreshReferenceSuggest(): void {
+    if (!this.inputEl || !this.referenceSuggest) return;
+    const query = referenceQuery(this.text, this.inputEl.selectionStart);
+    if (!query) {
+      this.referenceSuggest.close();
+      return;
+    }
+    this.referenceSuggest.update(query.query);
+  }
+
   private async submit(createMode: "create" | "createAndOpen"): Promise<void> {
     if (this.submitting || this.text.trim().length === 0) return;
     this.submitting = true;
@@ -474,8 +525,10 @@ export class QuickAddModal extends Modal {
     try {
       const parsedNatural = !this.task && this.due === null ? parseNaturalDate(this.text, todayString()) : null;
       const natural = parsedNatural?.date && parsedNatural.cleaned ? parsedNatural : null;
+      const visibleText = natural?.date ? natural.cleaned : this.text.trim();
+      const references = updateTaskReferences(this.text, visibleText, this.references);
       await this.onSubmit({
-        text: natural?.date ? natural.cleaned : this.text.trim(),
+        text: serializeTaskReferences(visibleText, references),
         due: natural?.date ?? this.due,
         scheduled: this.scheduled,
         priority: this.priority,
@@ -492,6 +545,9 @@ export class QuickAddModal extends Modal {
 
   onClose(): void {
     if (QuickAddModal.active === this) QuickAddModal.active = null;
+    this.referenceSuggest?.destroy();
+    this.referenceSuggest = null;
+    this.inputEl = null;
     this.contentEl.empty();
     this.modalEl.removeClass("kairos-quickadd-modal");
   }

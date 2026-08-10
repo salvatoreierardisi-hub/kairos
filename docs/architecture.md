@@ -13,18 +13,22 @@ Markdown notes ──▶ TaskIndex ──▶ TaskPanel / daily projection
 ## Boundaries
 
 - `src/core/` contains pure, synchronous domain logic: parsing, formatting, filtering,
-  sorting, placement, safe line resolution, task-detail links, and daily insertion.
-  It has no imports from `obsidian` and is covered by Vitest.
+  sorting, placement, safe line resolution, task-detail links, Inbox sections,
+  archiving rules, contextual-reference catalogs, and daily insertion. It has no imports
+  from `obsidian` and is covered by Vitest.
 - `src/index/TaskIndexCore.ts` owns pure per-file buckets and the cached flat snapshot;
   `src/index/TaskIndex.ts` performs chunked vault I/O, exclusions, generation checks,
   debounced notifications, and file-event handling.
 - `src/io/TaskWriter.ts` is the only component that creates, moves, updates, or deletes
   persistent task lines.
+- `src/io/InboxArchive.ts` coordinates copy-first, verify, then remove archiving and
+  safe restoration of reopened Inbox tasks.
 - `src/io/DailyNotesConfig.ts` resolves the effective Daily Notes configuration and
   recognizes daily-note paths.
 - `src/view/TaskPanel.ts` provides the reusable task interface shared by the full-page
   and compact sidebar views.
-- `src/view/QuickAddModal.ts` is the unified create/edit interface.
+- `src/view/QuickAddModal.ts` is the unified create/edit interface, including contextual
+  `@` references that do not change task placement.
 - `src/view/DailyTasksBlock.ts` renders the interactive `kairos-tasks` projection inside
   a recognized daily note.
 - `src/settings/` exposes configurable paths, daily-note behavior, and tag prefixes.
@@ -50,9 +54,21 @@ Global capture writes to the configured Inbox. Contextual capture writes to the 
 or selected note. Assigning or changing a due date updates only the task metadata; it
 does not move the source line.
 
+The Inbox keeps task lines in status-specific sections. Optional retention-based
+archiving moves eligible completed and cancelled lines to yearly archive notes using a
+stable block ID and restores reopened tasks to the Inbox before removing the archive
+copy.
+
 The effective date (`due`, otherwise `scheduled`) controls Today, Upcoming, Agenda, and
 the interactive daily-note block. This keeps physical storage independent from where a
 task is useful to see.
+
+## Performance model
+
+The index stores per-file buckets and materializes the combined snapshot lazily, so a
+full vault build does not flatten all accumulated tasks after every file. The task
+reference catalog builds direct-index relationships in one pass and is cached while the
+editor remains open, with invalidation on structural vault events.
 
 ## Runtime dependencies
 

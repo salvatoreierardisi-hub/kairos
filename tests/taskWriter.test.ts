@@ -156,3 +156,69 @@ describe("TaskWriter.updateTaskWithDetail", () => {
     expect(trashFile.mock.calls[0]?.[0].path).toBe("_inbox/Dettagli/Nuovo testo.md");
   });
 });
+
+describe("TaskWriter con Inbox organizzata", () => {
+  it("sposta fisicamente un task nella sezione del nuovo stato", async () => {
+    const source = "- [ ] Vecchio";
+    const { writer, contents } = fixture(source);
+
+    await writer.setStatus(task(source), "done");
+
+    const inbox = contents.get("_inbox/Inbox.md") ?? "";
+    const completed = inbox.indexOf("## Task completati");
+    const changed = inbox.indexOf("- [x] Vecchio");
+    const cancelled = inbox.indexOf("## Task annullati");
+    expect(completed).toBeGreaterThan(-1);
+    expect(changed).toBeGreaterThan(completed);
+    expect(changed).toBeLessThan(cancelled);
+  });
+});
+
+describe("TaskWriter con task archiviati", () => {
+  it("delega la riapertura della checkbox al servizio archivio", async () => {
+    const source = "- [x] Vecchio ✅ 2026-08-03 ^kairos-old";
+    const { writer: plainWriter } = fixture(source);
+    const app = (plainWriter as unknown as { app: unknown }).app;
+    const archive = {
+      isArchivedTask: vi.fn(() => true),
+      reopen: vi.fn(async (_task: Task, _line: string) => undefined),
+    };
+    const writer = new TaskWriter(app as never, () => ({ ...DEFAULT_SETTINGS }), archive as never);
+    const archived = task(source, {
+      file: "_inbox/Archivio/2026.md",
+      status: "done",
+      completed: "2026-08-03",
+      blockId: "kairos-old",
+    });
+
+    await writer.toggleTask(archived);
+
+    expect(archive.reopen).toHaveBeenCalledWith(
+      archived,
+      "- [ ] Vecchio ^kairos-old",
+    );
+  });
+
+  it("riapre nell'Inbox anche con Salva e apri e collega Dettagli alla nuova casa", async () => {
+    const source = "- [x] Vecchio ✅ 2026-08-03 ^kairos-old";
+    const base = fixture(source);
+    const app = (base.writer as unknown as { app: unknown }).app;
+    const archive = {
+      isArchivedTask: vi.fn(() => true),
+      reopen: vi.fn(async (_task: Task, _line: string) => undefined),
+    };
+    const writer = new TaskWriter(app as never, () => ({ ...DEFAULT_SETTINGS }), archive as never);
+    const archived = task(source, {
+      file: "_inbox/Archivio/2026.md",
+      status: "done",
+      completed: "2026-08-03",
+      blockId: "kairos-old",
+    });
+
+    const detail = await writer.updateTaskWithDetail(archived, { ...base.update, status: "open" });
+
+    expect(archive.reopen).toHaveBeenCalledOnce();
+    expect(archive.reopen.mock.calls[0]?.[1]).toContain(`[[${detail.path.replace(/\.md$/, "")}|Dettagli]]`);
+    expect(base.contents.get(detail.path)).toContain("[[_inbox/Inbox#^kairos-old|Apri il task]]");
+  });
+});

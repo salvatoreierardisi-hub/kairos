@@ -1,3 +1,5 @@
+import { organizeInboxContent } from "./inboxSections";
+
 const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
 export function insertTaskAtTop(content: string, line: string, heading = "## Task"): string {
@@ -30,7 +32,7 @@ export function insertTaskAtTop(content: string, line: string, heading = "## Tas
 }
 
 export function createInboxContent(line: string): string {
-  return `# Inbox\n\n## Task\n${line}\n`;
+  return organizeInboxContent("# Inbox\n", line);
 }
 
 export const DAILY_TASKS_BLOCK = "```kairos-tasks\n```";
