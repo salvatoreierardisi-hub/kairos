@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "benchmark": "vitest bench --run",
     "test": "vitest run",
     "test:watch": "vitest"
   },

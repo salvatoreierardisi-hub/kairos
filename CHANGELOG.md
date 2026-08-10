@@ -4,6 +4,41 @@ All notable changes to Kairos are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Contextual `@` references to notes, unique project indexes, and folders without moving
+  the task from its Markdown source line.
+- Optional automatic archiving for completed and cancelled Inbox tasks after a
+  configurable retention period, with idempotent writes and safe reopening.
+- **Save and open** support for existing tasks, including repair of missing linked
+  detail notes without changing task identity.
+- A deterministic benchmark suite for parsing, indexing, queries, and contextual
+  reference catalogs, with a documented before/after report.
+
+### Changed
+
+- The configured Inbox is organized into stable Open, In progress, Completed, and
+  Cancelled sections at startup and after relevant task operations.
+- Daily-note projections use a denser layout with inline source and detail links, and
+  skip DOM reconstruction when the visible task projection has not changed.
+- Initial indexing materializes its combined snapshot lazily instead of rebuilding it
+  after every file.
+- The contextual-reference catalog is built in a single pass and cached while typing,
+  with invalidation on vault create, delete, and rename events.
+
+### Fixed
+
+- Normal note edits that do not change task lines no longer cause daily projections to
+  jump or rebuild.
+- The contextual-reference picker remains usable and vertically scrollable on mobile,
+  without being covered by the composer footer.
+
+### Performance
+
+- On the documented synthetic dataset, initial index construction dropped from a
+  64.452 ms median to 0.114–0.115 ms, while the reference catalog dropped from
+  19.781 ms to 0.604–0.609 ms.
+
 ## [0.3.0] — 2026-08-06
 
 ### Added

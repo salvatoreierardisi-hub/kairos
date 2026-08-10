@@ -1,10 +1,18 @@
 import { App, MarkdownRenderChild, Notice, setIcon, TFile } from "obsidian";
 import { TaskIndex } from "../index/TaskIndex";
 import { TaskWriter } from "../io/TaskWriter";
-import { Task } from "../types";
+import { Priority, Task } from "../types";
 import { sortTasks } from "../core/sorting";
 import { orderDailyTasks, tasksForDay } from "../core/query";
-import { displayTaskText } from "../core/taskText";
+import { openTaskReference, renderTaskTextWithReferences } from "./TaskReferenceView";
+
+const PRIORITY_ICON: Record<Priority, string> = {
+  highest: "🔺",
+  high: "⏫",
+  medium: "🔼",
+  low: "🔽",
+  lowest: "⏬",
+};
 
 function nearestScrollContainer(element: HTMLElement): HTMLElement | null {
   let current = element.parentElement;
@@ -21,6 +29,7 @@ function nearestScrollContainer(element: HTMLElement): HTMLElement | null {
 export class DailyTasksBlock extends MarkdownRenderChild {
   private unsubscribe: (() => void) | null = null;
   private collapsed = false;
+  private signature: string | null = null;
 
   constructor(
     containerEl: HTMLElement,
@@ -37,8 +46,8 @@ export class DailyTasksBlock extends MarkdownRenderChild {
 
   onload(): void {
     this.containerEl.addClass("kairos-daily-block");
-    this.unsubscribe = this.index.onChange(() => this.render());
-    this.render();
+    this.unsubscribe = this.index.onChange(() => this.renderIfChanged());
+    this.renderIfChanged(true);
   }
 
   onunload(): void {
@@ -54,7 +63,22 @@ export class DailyTasksBlock extends MarkdownRenderChild {
     ));
   }
 
-  private render(): void {
+  private renderIfChanged(force = false): void {
+    const tasks = this.tasks();
+    const signature = JSON.stringify(tasks.map((task) => [
+      task.file,
+      task.line,
+      task.source,
+      task.detailPath
+        ? this.app.vault.getAbstractFileByPath(task.detailPath) instanceof TFile
+        : false,
+    ]));
+    if (!force && signature === this.signature) return;
+    this.signature = signature;
+    this.render(tasks);
+  }
+
+  private render(tasks: Task[]): void {
     this.containerEl.empty();
     const header = this.containerEl.createDiv({ cls: "kairos-daily-header" });
     const toggle = header.createEl("button", {
@@ -93,7 +117,6 @@ export class DailyTasksBlock extends MarkdownRenderChild {
       window.requestAnimationFrame(restoreScroll);
     });
 
-    const tasks = this.tasks();
     if (tasks.length === 0) {
       list.createDiv({ cls: "kairos-daily-empty", text: "Nessun task per questa data." });
       return;
@@ -130,20 +153,65 @@ export class DailyTasksBlock extends MarkdownRenderChild {
         );
       });
 
-      const body = row.createEl("button", { cls: "kairos-daily-task__body", attr: { type: "button" } });
-      body.createSpan({ cls: "kairos-daily-task__text", text: displayTaskText(task.text) || "(senza testo)" });
-      body.createSpan({
-        cls: "kairos-daily-task__source",
-        text: task.file.substring(task.file.lastIndexOf("/") + 1).replace(/\.md$/i, ""),
+      const body = row.createDiv({
+        cls: "kairos-daily-task__body",
+        attr: { role: "button", tabindex: "0", "aria-label": "Modifica task" },
       });
-      body.addEventListener("click", () => this.onEditTask(task));
+      const title = body.createDiv({ cls: "kairos-daily-task__text" });
+      if (task.text.trim()) {
+        renderTaskTextWithReferences(title, task.text, (reference) => {
+          void openTaskReference(this.app, task.file, reference);
+        });
+      } else {
+        title.setText("(senza testo)");
+      }
+      if (task.priority !== null) {
+        title.createSpan({ cls: "kairos-badge", text: PRIORITY_ICON[task.priority] });
+      }
 
-      const open = row.createEl("button", {
-        cls: "kairos-daily-open",
-        attr: { "aria-label": "Apri nota sorgente", type: "button" },
+      const meta = body.createDiv({ cls: "kairos-daily-task__meta" });
+      const source = meta.createSpan({
+        cls: "kairos-pill kairos-daily-task__source",
+        text: task.file.substring(task.file.lastIndexOf("/") + 1).replace(/\.md$/i, ""),
+        attr: { role: "link", tabindex: "0", "aria-label": "Apri nota sorgente" },
       });
-      open.createSpan({ cls: "kairos-daily-source-icon" });
-      open.addEventListener("click", () => void this.openSource(task));
+      const openSource = (event: Event) => {
+        event.stopPropagation();
+        void this.openSource(task);
+      };
+      source.addEventListener("click", openSource);
+      source.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openSource(event);
+      });
+
+      const detailFile = task.detailPath
+        ? this.app.vault.getAbstractFileByPath(task.detailPath)
+        : null;
+      if (task.detailPath && detailFile instanceof TFile) {
+        const detail = meta.createSpan({
+          cls: "kairos-pill kairos-detail-link",
+          text: "Dettagli",
+          attr: { role: "link", tabindex: "0" },
+        });
+        const openDetail = (event: Event) => {
+          event.stopPropagation();
+          void this.app.workspace.getLeaf("tab").openFile(detailFile);
+        };
+        detail.addEventListener("click", openDetail);
+        detail.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          openDetail(event);
+        });
+      }
+      body.addEventListener("click", () => this.onEditTask(task));
+      body.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        this.onEditTask(task);
+      });
     }
   }
 

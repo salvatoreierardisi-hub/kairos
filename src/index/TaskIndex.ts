@@ -28,14 +28,13 @@ export class TaskIndex {
     this.notify();
   }
 
-  private async indexFile(file: TFile): Promise<void> {
+  private async indexFile(file: TFile): Promise<boolean> {
     if (this.isExcluded(file.path)) {
-      this.core.delete(file.path);
-      return;
+      return this.core.delete(file.path);
     }
     const content = await this.app.vault.cachedRead(file);
     const tasks = parseFileContent(content, file.path);
-    this.core.replace(file.path, tasks);
+    return this.core.replace(file.path, tasks);
   }
 
   getAll(): Task[] {
@@ -73,18 +72,18 @@ export class TaskIndex {
   }
 
   registerVaultEvents(plugin: Plugin): void {
-    const refresh = async (file: unknown) => {
+    const refresh = async (file: unknown, structural = false) => {
       if (file instanceof TFile && file.extension === "md") {
         try {
-          await this.indexFile(file);
-          this.scheduleNotify();
+          const changed = await this.indexFile(file);
+          if (changed || structural) this.scheduleNotify();
         } catch (error) {
           console.warn(`Kairos: impossibile aggiornare l'indice per ${file.path}`, error);
         }
       }
     };
-    plugin.registerEvent(this.app.vault.on("modify", refresh));
-    plugin.registerEvent(this.app.vault.on("create", refresh));
+    plugin.registerEvent(this.app.vault.on("modify", (file) => refresh(file)));
+    plugin.registerEvent(this.app.vault.on("create", (file) => refresh(file, true)));
     plugin.registerEvent(
       this.app.vault.on("delete", (file) => {
         if (file instanceof TFile) {
@@ -96,7 +95,7 @@ export class TaskIndex {
     plugin.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
         this.core.delete(oldPath);
-        await refresh(file);
+        await refresh(file, true);
       }),
     );
     plugin.register(() => {

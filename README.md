@@ -31,10 +31,16 @@ There is no separate task database and no duplicated source of truth.
   one guarded write, while richer rules fall back to the source note unchanged.
 - **Unified editor.** Create with an explicit destination, then edit text, status, due
   date, and priority from the same interface.
-- **Create and open.** Turn an Inbox task into a linked detail note, or open a project
-  task at its source line immediately after creation.
+- **Context references.** Type `@` in the editor to link a task to a note, project
+  index, or folder without moving the task from its source line.
+- **Create and open.** Turn a new or existing Inbox task into a linked detail note, or
+  open a project task at its source line immediately after creation.
+- **Structured Inbox and safe archive.** Keep open, in-progress, completed, and
+  cancelled tasks in stable sections, with optional age-based archiving that can safely
+  restore reopened tasks.
 - **Daily-note projection.** Due tasks can appear as an interactive block inside the
-  matching daily note while remaining in their source file.
+  matching daily note while remaining in their source file, with source, detail, and
+  contextual links available inline.
 - **Powerful review tools.** Search, filter, sort, group, save views, select multiple
   tasks, and apply bulk actions.
 - **Desktop and mobile.** Use the right sidebar for quick desktop access, expand to a
@@ -85,6 +91,10 @@ Global capture always writes to the configured Inbox, even when a due date is as
 Contextual capture writes directly to a project note. Due dates control where a task is
 shown; they do not silently relocate its source line.
 
+References created with `@` add navigable context while preserving that same rule: a
+task can point to a project, folder, or supporting note without changing where its
+Markdown line lives.
+
 ## Task syntax
 
 Kairos reads and writes standard Markdown checkboxes:
@@ -133,10 +143,13 @@ Kairos requires Obsidian 1.5.0 or later and works on desktop and mobile.
   reschedule, reprioritize, move, tag, or delete it.
 - Use the menu next to **Crea** to choose **Crea e apri** when a task needs a linked
   detail note.
+- Type `@` while creating or editing a task to reference a note, project index, or
+  folder without relocating the task.
 
 Settings let you configure the Inbox path, inherit Obsidian Daily Notes settings or use
 a custom daily-note setup, define the Agenda horizon, exclude folders from indexing,
-and define project and area tag prefixes.
+define project and area tag prefixes, and optionally archive completed or cancelled
+Inbox tasks after a configurable retention period.
 
 ## Plugin API
 
@@ -155,10 +168,16 @@ npm install
 npm test
 npx tsc --noEmit
 npm run build
+npm run benchmark
 ```
 
 Domain logic lives in `src/core/` and is covered by Vitest. Obsidian integration lives
 in `src/index/`, `src/io/`, `src/view/`, `src/settings/`, and `src/main.ts`.
+
+The deterministic performance suite covers parsing, full and incremental indexing,
+queries, and contextual-reference catalog construction. See the
+[latest benchmark report](docs/performance/2026-08-10-performance-report.md) for the
+dataset and before/after results.
 
 See [Architecture](docs/architecture.md), [Contributing](CONTRIBUTING.md), and the
 [Changelog](CHANGELOG.md).

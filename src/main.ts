@@ -22,14 +22,19 @@ import { KairosApi } from "./api";
 import { DEFAULT_FILTER } from "./core/query";
 import { dayKey, effectiveDate } from "./core/dates";
 import { normalizeExcludedFolders } from "./core/settings";
+import { archiveFolderPath } from "./core/archive";
+import { InboxArchive } from "./io/InboxArchive";
+import { openFolderReference } from "./view/TaskReferenceView";
 
 export default class KairosPlugin extends Plugin {
   api!: KairosApi;
   settings: Settings = DEFAULT_SETTINGS;
   private index!: TaskIndex;
   private writer!: TaskWriter;
+  private archive!: InboxArchive;
   private dailyNotes!: DailyNotesConfigService;
   private uiSaveTimer: number | null = null;
+  private archiveLastRunDay: string | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -41,7 +46,8 @@ export default class KairosPlugin extends Plugin {
 
     this.index = new TaskIndex(this.app, () => this.settings);
     this.dailyNotes = new DailyNotesConfigService(this.app, () => this.settings);
-    this.writer = new TaskWriter(this.app, () => this.settings);
+    this.archive = new InboxArchive(this.app, () => this.settings);
+    this.writer = new TaskWriter(this.app, () => this.settings, this.archive);
     this.api = new KairosApi(
       this.index,
       this.writer,
@@ -49,6 +55,9 @@ export default class KairosPlugin extends Plugin {
       (task) => this.openTaskSource(task),
     );
     this.index.registerVaultEvents(this);
+    this.registerObsidianProtocolHandler("kairos-folder", (params) => {
+      if (typeof params.path === "string") openFolderReference(this.app, params.path);
+    });
 
     this.registerMarkdownCodeBlockProcessor("kairos-tasks", async (_source, el, ctx) => {
       const wasConnected = el.isConnected;
@@ -150,6 +159,11 @@ export default class KairosPlugin extends Plugin {
       name: "Apri sidebar task (alias integrazioni Kairos)",
       callback: () => this.activateSidebar(),
     });
+    this.addCommand({
+      id: "check-inbox-archive",
+      name: "Controlla archivio Inbox (Kairos)",
+      callback: () => void this.previewInboxArchive(),
+    });
 
     this.addSettingTab(new KairosSettingTab(this.app, this));
 
@@ -164,6 +178,11 @@ export default class KairosPlugin extends Plugin {
     };
     status.addEventListener("click", () => void this.openForDay(dayKey()));
     this.register(this.index.onChange(refreshStatus));
+    this.register(this.index.onChange(() => {
+      if (this.settings.autoArchiveCompleted && this.archiveLastRunDay !== dayKey()) {
+        void this.runAutomaticArchive();
+      }
+    }));
     refreshStatus();
 
     this.registerEvent(
@@ -173,7 +192,15 @@ export default class KairosPlugin extends Plugin {
     );
 
     this.app.workspace.onLayoutReady(() => {
-      void this.index.build();
+      void (async () => {
+        try {
+          await this.writer.organizeInbox();
+        } catch (error) {
+          new Notice(`Kairos: riordino Inbox non riuscito — ${error instanceof Error ? error.message : String(error)}`);
+        }
+        await this.index.build();
+        await this.runAutomaticArchive();
+      })();
       const active = this.app.workspace.getActiveFile();
       if (active) void this.ensureDailyProjection(active);
       if (Platform.isMobile) void this.prepareMobileSidebar();
@@ -426,6 +453,10 @@ export default class KairosPlugin extends Plugin {
     this.settings.agendaHorizonDays = Number.isInteger(this.settings.agendaHorizonDays)
       ? Math.max(1, Math.min(365, this.settings.agendaHorizonDays))
       : DEFAULT_SETTINGS.agendaHorizonDays;
+    this.settings.autoArchiveCompleted = this.settings.autoArchiveCompleted === true;
+    this.settings.completedRetentionDays = Number.isInteger(this.settings.completedRetentionDays)
+      ? Math.max(1, Math.min(365, this.settings.completedRetentionDays))
+      : DEFAULT_SETTINGS.completedRetentionDays;
   }
 
   async saveSettings(): Promise<void> {
@@ -435,5 +466,57 @@ export default class KairosPlugin extends Plugin {
 
   async getEffectiveDailySettings(): Promise<EffectiveDailyConfig> {
     return await this.dailyNotes.resolve();
+  }
+
+  async setAutoArchiveEnabled(enabled: boolean): Promise<boolean> {
+    if (!enabled) {
+      this.settings.autoArchiveCompleted = false;
+      await this.saveData(this.settings);
+      return false;
+    }
+    if (!(await this.confirmInboxArchive("Attivare l'archiviazione automatica?"))) return false;
+    this.settings.autoArchiveCompleted = true;
+    await this.saveData(this.settings);
+    await this.runArchiveNow();
+    return true;
+  }
+
+  async previewInboxArchive(): Promise<void> {
+    if (!(await this.confirmInboxArchive("Eseguire ora la manutenzione dell'Inbox?"))) return;
+    await this.runArchiveNow();
+  }
+
+  private async confirmInboxArchive(title: string): Promise<boolean> {
+    const analysis = this.archive.analyze(this.index.getAll(), dayKey());
+    const destination = archiveFolderPath(this.settings.inboxPath);
+    const missing = analysis.missingDate > 0
+      ? `\n${analysis.missingDate} task conclusi senza data resteranno nell'Inbox.`
+      : "";
+    return window.confirm(
+      `${title}\n\n${analysis.eligible.length} task verranno archiviati in ${destination}.${missing}\n\nNessuna nota Dettagli verrà eliminata.`,
+    );
+  }
+
+  private async runAutomaticArchive(): Promise<void> {
+    if (!this.settings.autoArchiveCompleted) return;
+    const today = dayKey();
+    if (this.archiveLastRunDay === today) return;
+    this.archiveLastRunDay = today;
+    const analysis = this.archive.analyze(this.index.getAll(), today);
+    if (analysis.eligible.length === 0) return;
+    await this.runArchiveNow(today);
+  }
+
+  private async runArchiveNow(today = dayKey()): Promise<void> {
+    const result = await this.archive.run(this.index.getAll(), today);
+    this.archiveLastRunDay = today;
+    if (result.archived > 0) {
+      new Notice(`Kairos: archiviati ${result.archived} task conclusi.`);
+    } else if (result.errors.length === 0) {
+      new Notice("Kairos: nessun task da archiviare.");
+    }
+    if (result.errors.length > 0) {
+      new Notice(`Kairos: ${result.errors.length} task non archiviati — ${result.errors[0]}`);
+    }
   }
 }
